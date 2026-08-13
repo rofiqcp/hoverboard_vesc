@@ -39,10 +39,12 @@ assert align_ms + sweep_ms < timeout_ms, (align_ms, sweep_ms, timeout_ms)
 assert "sensorCal.sweep_direction = -1" in runtime
 assert "sensorCal.reverse_cycles" in runtime
 
-# 3) Encoder VESC detect must complete before timeout as well.
-enc_cycles = macro_int(runtime, "SENSOR_CAL_VESC_ENCODER_CYCLES")
-enc_ms = (enc_cycles * 5760 + rate_q4_per_ms - 1) // rate_q4_per_ms
-assert enc_cycles == 6 and align_ms + enc_ms < timeout_ms
+# 3) Encoder VESC detect follows upstream-shaped local +/-120 degree probes.
+probe_q4 = macro_int(runtime, "SENSOR_CAL_ENCODER_PROBE_Q4")
+probe_max = macro_int(runtime, "SENSOR_CAL_ENCODER_PROBE_MAX_COUNT")
+probe_settle = macro_int(runtime, "SENSOR_CAL_ENCODER_PROBE_SETTLE_MS")
+enc_ms = probe_max * (((probe_q4 + rate_q4_per_ms - 1) // rate_q4_per_ms) + probe_settle)
+assert probe_q4 == 1920 and probe_max >= 8 and align_ms + enc_ms < timeout_ms
 
 # 4) Standard VESC telemetry validity must recognize live pending samples. V11's
 # diagnostic incorrectly waited for current_avg_take() to drain them first.

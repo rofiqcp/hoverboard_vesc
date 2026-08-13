@@ -7,7 +7,8 @@ def src(name):
 
 def test_encoder_detect_never_fabricates_configured_ratio():
     s = src("Src/runtime_control.c")
-    assert "does NOT prove encoder ratio/pole-pairs" in s
+    assert "cfg->encoder_cpr + den / 2U" in s
+    assert "encoder_ratio_fallback_used = false" in s
     assert "sensor_cal_measured_encoder_offset_deg" in s
     assert "candidate_config.encoder_offset_deg = 0U;\n                        candidate_config.encoder_ratio" not in s
 

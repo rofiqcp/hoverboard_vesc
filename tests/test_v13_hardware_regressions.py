@@ -26,7 +26,7 @@ assert 'LeftEncoder_GetCount(), left_u, left_v' not in motor
 # configured pole-pair into a fake measured encoder ratio. Ratio must come from
 # commanded electrical motion versus measured A/B motion.
 assert 'encoder_ratio_fallback_used' in runtime
-assert 'does NOT prove encoder ratio/pole-pairs' in runtime
+assert 'cfg->encoder_cpr + den / 2U' in runtime and 'encoder_probe_ratio_sum' in runtime
 assert 'configured_pp' not in runtime
 assert 'sensorCal.encoder_ratio_fallback_used = false;' in runtime
 assert 'VescDetectTerminalSnapshot vescDetectTerminal[2]' in runtime

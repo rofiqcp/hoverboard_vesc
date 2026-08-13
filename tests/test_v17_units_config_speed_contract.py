@@ -77,13 +77,13 @@ assert 'sign_threshold = max(30, int(abs(value) * 0.05))' in tester
 
 # 7) Encoder detect measures direction with distinct forward/reverse halves instead
 # of preserving a stale configured direction whenever the loaded wheel dithers.
-for token in ('SENSOR_CAL_ENCODER_FORWARD_SWEEPS 3U',
-              'SENSOR_CAL_ENCODER_REVERSE_SWEEPS 3U',
-              'encoder_transition_mid[16]', 'encoder_direction_normal_score',
-              'encoder_direction_inverted_score', 'encoder_direction_proved',
-              'sensor_cal_encoder_direction_proof'):
+for token in ('SENSOR_CAL_ENCODER_PROBE_Q4            1920',
+              'SENSOR_CAL_ENCODER_PROBE_MIN_VALID',
+              'encoder_direction_normal_score', 'encoder_direction_inverted_score',
+              'encoder_direction_proved', 'sensor_cal_encoder_probe_record',
+              'LeftEncoder_GetCount()'):
     assert token in runtime, token
-assert 'sensorCal.encoder_forward_delta = state->position_ticks - sensorCal.encoder_start;' in runtime
+assert 'SENSOR_CAL_NATIVE_ENCODER_FORWARD_SWEEPS 3U' in runtime
 
 # 8) First motion test must tolerate one-time encoder electrical alignment instead
 # of declaring failure at the edge of the old 0.9 s window.

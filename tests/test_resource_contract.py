@@ -81,7 +81,7 @@ assert 'ESC_MOTOR_ERROR_ABS_OVER_CURRENT' in protocol
 assert '* 200U) / 12U' in runtime
 assert '* 200U) / 12U' in conf
 # VESC encoder detect must persist inferred pole pairs and keep watchdog alive.
-assert 'SENSOR_CAL_VESC_ENCODER_CYCLES' in runtime
+assert 'SENSOR_CAL_ENCODER_PROBE_Q4' in runtime and 'SENSOR_CAL_ENCODER_PROBE_MAX_COUNT' in runtime
 assert 'detected_pole_pairs' in runtime
 assert 'EEPROM_LEFT_POLE_PAIRS' in runtime and 'EEPROM_RIGHT_POLE_PAIRS' in runtime
 assert 'RuntimeControl_VescAlive();' in protocol

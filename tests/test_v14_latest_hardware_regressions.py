@@ -29,7 +29,7 @@ assert 'memcpy(snap->result.hall_table, sensorCal.measured_hall_table, 8U);' in 
 # 2) Latest LEFT log proved all-four-state clean quadrature with many valid/0
 # invalid edges but near-zero net displacement. V21 correctly treats that only as
 # sensor-health evidence; it must not fabricate configured pole-pairs as measured ratio.
-assert 'does NOT prove encoder ratio/pole-pairs' in runtime
+assert 'cfg->encoder_cpr + den / 2U' in runtime and 'encoder_probe_ratio_sum' in runtime
 assert 'configured_pp' not in runtime
 assert 'sensorCal.encoder_ratio_fallback_used = false;' in runtime
 assert 'sensor_cal_measured_encoder_offset_deg' in runtime

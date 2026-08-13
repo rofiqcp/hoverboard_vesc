@@ -11,8 +11,9 @@ def test_encoder_retry_restarts_forward_and_rebases_direction_window():
     assert retry.index('sensorCal.sweep_direction = 1;') < retry.index('sensorCal.last_motion_tick = now;')
 
 def test_encoder_ratio_can_use_unblocked_reverse_half():
-    assert 'raw_reverse = total_delta - (int64_t)sensorCal.encoder_forward_delta' in runtime
-    assert '(mag_reverse > mag_forward) ? -raw_reverse : raw_forward' in runtime
+    assert 'static const int8_t directions[4] = {1, -1, -1, 1};' in runtime
+    assert 'if (mag < 3U' in runtime
+    assert 'const uint32_t ratio = ((uint32_t)cfg->encoder_cpr + den / 2U) / den;' in runtime
     assert 'configured_pp' not in runtime
 
 def test_integrated_detect_uses_conservative_one_amp_default():
