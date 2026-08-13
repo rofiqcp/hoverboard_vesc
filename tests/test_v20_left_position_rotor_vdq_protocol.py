@@ -13,10 +13,14 @@ assert 'if(mask&(1UL<<20))vesc_buf_append_float32(out,(float)avg_vq_mv/1000.0f,1
 assert 'case 2U: /* Observer: do NOT alias sensor/active phase.' in proto
 assert 'case 3U: /* Encoder raw mechanical angle' in proto
 assert '*value = RuntimeControl_PositionDeg(!right);' in proto
-assert 'probe_start_count' in runtime and 'probe_delta_counts' in runtime
-assert 'wanted_inverted = encoderAlign.probe_delta_counts < 0 ? 1U : 0U' in runtime
-assert '/* +120 deg electrical */' in runtime
-assert 'encoderAlign.motor == ESC_MOTOR_LEFT && !encoderAlign.direction_proved' in runtime
+# Boot sync must not re-learn direction at a steering hard-stop. Direction/ratio
+# are commissioning proof; boot only performs a current-regulated phase-0 lock.
+assert '1.00 A D-axis phase-0 lock' in runtime
+a=runtime.index('static int16_t encoder_alignment_target_current')
+b=runtime.index('static void Homing_SetDefaults', a)
+boot=runtime[a:b]
+assert 'wanted_inverted' not in boot and '+120 deg electrical' not in boot
+assert 'MotorSensor_SyncEncoderElectricalPhase(state, 0U)' in boot
 assert 'positionSessionZeroRight' in runtime
 assert 'position_session_zero(left)' in runtime
 assert 'return cfg->motor_inverted ? -span : span;' in runtime

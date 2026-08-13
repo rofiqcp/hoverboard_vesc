@@ -1246,6 +1246,17 @@ static void sensor_cal_finish(uint8_t terminal_state, uint8_t result_code)
      * single live commissioning workspace. */
     if (sensorCal.vesc_wire_detect) vesc_detect_store_terminal_snapshot();
 
+    /* Standard COMM_DETECT_ENCODER result is already frozen above. Board-specific
+     * steering commissioning continues asynchronously so VESC Tool is not held
+     * without a reply during right-stop -> left-stop -> center travel. */
+    if (success && sensorCal.vesc_wire_detect &&
+        sensorCal.method == ESC_SENSOR_CAL_METHOD_AUTO &&
+        sensorCal.motor == ESC_MOTOR_LEFT &&
+        sensorCal.sensor_type == MOTOR_SENSOR_ENCODER_AB &&
+        sensorCal.state == ESC_SENSOR_CAL_SUCCESS) {
+        (void)RuntimeControl_StartHomingCalibration(true);
+    }
+
     /* Selalu antrekan satu final read-back setelah state terminal. */
     telemetryOneShotPage = ESC_TELEM_SENSOR_CAL;
     configOneShotPending = true;
@@ -1388,10 +1399,7 @@ static void vesc_detect_store_terminal_snapshot(void)
     snap->result.result_code = sensorCal.result_code;
     snap->result.sensor_type = sensorCal.sensor_type;
     snap->result.encoder_cpr = cfg->encoder_cpr;
-    snap->result.encoder_offset_deg =
-        (sensorCal.sensor_type == MOTOR_SENSOR_ENCODER_AB &&
-         sensorCal.detected_encoder_offset_deg < 360U)
-            ? sensorCal.detected_encoder_offset_deg : cfg->encoder_offset_deg;
+    snap->result.encoder_offset_deg = 0U;
     snap->result.encoder_inverted = cfg->sensor_inverted ? 1U : 0U;
     snap->result.pole_pairs = (sensorCal.sensor_type == MOTOR_SENSOR_ENCODER_AB && cfg->encoder_ratio != 0U)
         ? cfg->encoder_ratio : conf->foc_motor_pole_pairs;
@@ -1895,25 +1903,16 @@ static int32_t position_session_zero(bool left)
     return *zero;
 }
 
-static int32_t encoder_probe_count(void)
-{
-    const uint32_t primask = __get_PRIMASK();
-    __disable_irq();
-    const int32_t count = LeftEncoder_GetCount();
-    if (primask == 0U) __enable_irq();
-    return count;
-}
-
 static int16_t encoder_alignment_target_current(uint8_t motor)
 {
     const mc_configuration *conf = sensor_cal_params(motor);
-    uint32_t units = conf->foc_current_units_per_amp ? conf->foc_current_units_per_amp : 800U;
-    int32_t target = (int32_t)units / 2; /* 0.50 A electrical D-axis lock */
+    int32_t units = conf->foc_current_units_per_amp ?
+        (int32_t)conf->foc_current_units_per_amp : 800;
+    int32_t target = units; /* 1.00 A D-axis phase-0 lock */
     if (target < SENSOR_CAL_CURRENT_MIN_INTERNAL) target = SENSOR_CAL_CURRENT_MIN_INTERNAL;
-    int32_t max_current = conf->l_current_max;
-    if (max_current < 0) max_current = -max_current;
-    if (max_current > 0 && target > max_current) target = max_current;
     if (target > SENSOR_CAL_CURRENT_MAX_INTERNAL) target = SENSOR_CAL_CURRENT_MAX_INTERNAL;
+    if (target > conf->l_current_max) target = conf->l_current_max;
+    if (target < 1) target = 1;
     return (int16_t)target;
 }
 
@@ -1923,17 +1922,11 @@ static void encoder_alignment_abort(void)
     const uint8_t motor = encoderAlign.motor;
     sensor_cal_set_current_override(motor, false, 0, 0);
     encoderAlign.active = false;
-    /* Jangan mematikan master enable global: sisi lain boleh tetap ARMED. */
     refresh_master_enable();
 }
 
 static void encoder_alignment_start(uint8_t motor)
 {
-    /* V20: establish BOTH missing properties of an incremental AB encoder after
-     * boot: absolute electrical zero and the sign of raw TIM4 count versus a
-     * positive electrical field rotation. A single phase-0 lock can establish
-     * zero but can never prove direction; that was the remaining LEFT failure in
-     * V19 (Iq tracked while torque vector rotated the wrong way). */
     fault_report_reset_all();
     const uint8_t bit = motor == ESC_MOTOR_RIGHT ? 0x02U : 0x01U;
     sensorCalibrationFastCurrentFaultMask &= (uint8_t)~bit;
@@ -1959,137 +1952,60 @@ static void encoder_alignment_start(uint8_t motor)
 static bool encoder_alignment_service(uint32_t now)
 {
     if (!encoderAlign.active) return false;
-    const uint8_t bit = encoderAlign.motor == ESC_MOTOR_RIGHT ? 0x02U : 0x01U;
+    const bool left = encoderAlign.motor == ESC_MOTOR_LEFT;
+    const uint8_t bit = left ? 0x01U : 0x02U;
+    MotorRuntimeConfig *cfg = left ? &motorConfigLeft : &motorConfigRight;
+    MotorSensorState *state = left ? &motorSensorStateLeft : &motorSensorStateRight;
+    mc_configuration *conf = left ? &motorConfLeft : &motorConfRight;
+
     if ((sensorCalibrationFastCurrentFaultMask & bit) != 0U ||
-        (motorControlOvercurrentFaultMask & bit) != 0U) {
+        (motorControlOvercurrentFaultMask & bit) != 0U ||
+        cfg->sensor_type != MOTOR_SENSOR_ENCODER_AB ||
+        cfg->encoder_calibrated == 0U || cfg->encoder_sequence_valid == 0U ||
+        cfg->encoder_ratio == 0U) {
+        state->encoder_electrical_aligned = false;
+        if (left) encoderAlignedLeft = false; else encoderAlignedRight = false;
         encoder_alignment_abort();
         return false;
     }
 
-    const int32_t target = encoderAlign.target_current_internal;
-    const uint32_t elapsed_total = now - encoderAlign.start_tick;
-    int32_t align_current = target;
-    if (elapsed_total < 300U) {
-        const int32_t start = target / 2;
-        align_current = start + ((target - start) * (int32_t)elapsed_total + 150) / 300;
+    const uint32_t elapsed = now - encoderAlign.start_tick;
+    int32_t current = encoderAlign.target_current_internal;
+    if (elapsed < 350U) {
+        int32_t start = current / 2;
+        if (start < SENSOR_CAL_CURRENT_MIN_INTERNAL) start = SENSOR_CAL_CURRENT_MIN_INTERNAL;
+        current = start + ((current - start) * (int32_t)elapsed) / 350;
     }
-
-    /* Stages are slow-loop only; DMA/FOC ISR remains untouched.
-     * 0: settle at phase 0
-     * 1: sweep +120 electrical degrees and observe raw TIM4 direction
-     * 2: return to phase 0
-     * 3: settle, apply proven direction, then capture absolute electrical zero. */
-    int16_t forced_angle_q4 = 0;
-    const uint32_t stage_elapsed = now - encoderAlign.stage_tick;
-    if (encoderAlign.stage == 0U) {
-        forced_angle_q4 = 0;
-        if (stage_elapsed >= 800U) {
-            if (encoderAlign.motor == ESC_MOTOR_LEFT && LeftEncoder_IsEnabled())
-                encoderAlign.probe_start_count = encoder_probe_count();
-            encoderAlign.stage = 1U;
-            encoderAlign.stage_tick = now;
-        }
-    } else if (encoderAlign.stage == 1U) {
-        uint32_t t = stage_elapsed > 600U ? 600U : stage_elapsed;
-        forced_angle_q4 = (int16_t)((1920L * (int32_t)t) / 600L); /* +120 deg electrical */
-        if (stage_elapsed >= 600U) {
-            if (encoderAlign.motor == ESC_MOTOR_LEFT && LeftEncoder_IsEnabled()) {
-                int32_t d32 = encoder_probe_count() - encoderAlign.probe_start_count;
-                if (d32 > INT16_MAX) d32 = INT16_MAX;
-                if (d32 < INT16_MIN) d32 = INT16_MIN;
-                const int16_t d = (int16_t)d32;
-                encoderAlign.probe_delta_counts = d;
-                encoderAlign.direction_proved = (d >= 2 || d <= -2);
-            }
-            encoderAlign.stage = 2U;
-            encoderAlign.stage_tick = now;
-        }
-    } else if (encoderAlign.stage == 2U) {
-        uint32_t t = stage_elapsed > 600U ? 600U : stage_elapsed;
-        forced_angle_q4 = (int16_t)(1920L - (1920L * (int32_t)t) / 600L);
-        if (stage_elapsed >= 600U) {
-            encoderAlign.stage = 3U;
-            encoderAlign.stage_tick = now;
-            forced_angle_q4 = 0;
-        }
-    } else {
-        forced_angle_q4 = 0;
-    }
-
-    sensor_cal_set_current_override(encoderAlign.motor, true, forced_angle_q4,
-                                    (int16_t)align_current);
+    sensor_cal_set_current_override(encoderAlign.motor, true, 0, (int16_t)current);
     refresh_master_enable();
-    if (encoderAlign.stage < 3U) return true;
-    if ((uint32_t)(now - encoderAlign.stage_tick) < 250U) return true;
+    if (elapsed < 1100U) return true;
 
-    MotorSensorState *state = sensor_cal_sensor_state(encoderAlign.motor);
-    MotorRuntimeConfig *cfg = sensor_cal_config(encoderAlign.motor);
-    mc_configuration *conf = sensor_cal_params(encoderAlign.motor);
-
-    /* Never convert a one-point lock into a usable AB electrical reference when
-     * the direction sweep produced no measurable raw TIM4 displacement. A wrong
-     * sign still gives plausible Id/Iq but rotates the torque vector the wrong
-     * way, which is exactly the LEFT hardware symptom. Keep the sensor unaligned
-     * so Auto Detect/ARM reports a concrete readiness failure instead. */
-    if (encoderAlign.motor == ESC_MOTOR_LEFT && !encoderAlign.direction_proved) {
-        state->encoder_electrical_aligned = false;
-        encoderAlignedLeft = false;
-        sensor_cal_set_current_override(encoderAlign.motor, false, 0, 0);
-        encoderAlign.active = false;
-        refresh_master_enable();
-        return false;
-    }
-
-    /* LEFT is the only incremental encoder backend on this board. A positive
-     * commanded electrical sweep must produce positive normalized encoder phase.
-     * When raw TIM4 count moved negative, invert it. Re-prepare the fast encoder
-     * scale before final zero capture so no pre-change phase history survives.
-     * If the probe was not proven above, we returned without setting READY. */
-    if (encoderAlign.motor == ESC_MOTOR_LEFT && encoderAlign.direction_proved) {
-        const uint8_t wanted_inverted = encoderAlign.probe_delta_counts < 0 ? 1U : 0U;
-        if (cfg->sensor_inverted != wanted_inverted) {
-            cfg->sensor_inverted = wanted_inverted;
-            encoderAlign.direction_changed = true;
-            settingsDirty = true;
-        }
-        const uint32_t primask_prepare = __get_PRIMASK();
-        __disable_irq();
-        MotorSensor_Reset(state);
-        MotorSensor_PrepareRuntime(cfg, state, conf->foc_motor_pole_pairs);
-        state->encoder_hw_last_count = LeftEncoder_GetCount();
-        state->encoder_hw_count_initialized = true;
-        state->position_ticks = 0;
-        state->encoder_speed_reference_ticks = 0;
-        state->encoder_speed_window_count = 0U;
-        state->encoder_speed_q4 = 0;
-        state->encoder_speed_initialized = false;
-        if (primask_prepare == 0U) __enable_irq();
-    }
-
+    /* Rotor is held at stator electrical phase 0. Rebuild the incremental runtime
+     * accumulator at the current TIM4 count, then define that physical lock as
+     * electrical 0. Mechanical steering zero is deliberately NOT persisted here;
+     * hard-stop homing owns the 0..360 coordinate. */
     const uint32_t primask = __get_PRIMASK();
     __disable_irq();
-    (void)MotorSensor_SyncEncoderElectricalPhase(state, 0U);
-    state->encoder_speed_reference_ticks = state->position_ticks;
+    MotorSensor_Reset(state);
+    MotorSensor_PrepareRuntime(cfg, state, conf->foc_motor_pole_pairs);
+    if (left) {
+        const int32_t raw = LeftEncoder_GetCount();
+        state->encoder_hw_last_count = raw;
+        state->encoder_hw_count_initialized = true;
+    }
+    state->position_ticks = 0;
+    state->encoder_speed_reference_ticks = 0;
     state->encoder_speed_window_count = 0U;
     state->encoder_speed_q4 = 0;
     state->encoder_speed_initialized = false;
+    (void)MotorSensor_SyncEncoderElectricalPhase(state, 0U);
+    if (left) encoderAlignedLeft = true; else encoderAlignedRight = true;
     if (primask == 0U) __enable_irq();
-    if (encoderAlign.motor == ESC_MOTOR_RIGHT) encoderAlignedRight = true;
-    else encoderAlignedLeft = true;
 
-    /* One boot/session revolution starts exactly where electrical sync finished.
-     * Mechanical hard-stop homing, when available, supersedes this origin. */
-    position_session_rezero(encoderAlign.motor == ESC_MOTOR_LEFT);
-
+    position_session_rezero(left);
     sensor_cal_set_current_override(encoderAlign.motor, false, 0, 0);
     encoderAlign.active = false;
     refresh_master_enable();
-
-    /* Persist a newly proven AB direction. This is outside the ISR and only runs
-     * after the bridge is released, so it cannot disturb current-loop timing. */
-    if (encoderAlign.direction_changed) {
-        (void)RuntimeSettings_Save();
-    }
     return false;
 }
 
@@ -2811,6 +2727,7 @@ static bool homing_update_one(bool left, uint32_t now)
         cal->span_ticks = span;
         cal->calibrated = 1U;
         cal->homed = 1U;
+        if (left) homingOnBootLeft = true;
         settingsDirty = true;
         state->state = ESC_HOMING_RETURN_CENTER;
         state->start_tick = now;
@@ -4579,6 +4496,13 @@ bool RuntimeControl_ShouldSoundFaultBuzzer(void)
 
 uint8_t RuntimeControl_HomingStateLeft(void) { return homingRuntimeLeft.state; }
 uint8_t RuntimeControl_HomingStateRight(void) { return homingRuntimeRight.state; }
+bool RuntimeControl_SteeringReady(bool left)
+{
+    const SteeringCalibration *cal = left ? &steeringCalibrationLeft : &steeringCalibrationRight;
+    const MotorSensorState *sensor = left ? &motorSensorStateLeft : &motorSensorStateRight;
+    return cal->calibrated != 0U && cal->homed != 0U && cal->span_ticks != 0 &&
+           sensor->encoder_electrical_aligned;
+}
 uint8_t RuntimeControl_HomingActiveMask(void) { return homingActiveMask; }
 int16_t RuntimeControl_HomingPeakCurrentLeft(void) { return homingRuntimeLeft.peak_current_centi_amp; }
 int16_t RuntimeControl_HomingPeakCurrentRight(void) { return homingRuntimeRight.peak_current_centi_amp; }

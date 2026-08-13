@@ -127,6 +127,7 @@ bool RuntimeControl_StartHomingOne(bool left);
  * destructive full two-stop calibration automatically. */
 bool RuntimeControl_SetHomingOnBoot(bool left, bool on);
 bool RuntimeControl_HomingOnBoot(bool left);
+bool RuntimeControl_SteeringReady(bool left);
 
 /* Inisialisasi runtime mode, PID posisi, EEPROM dan state link. */
 void RuntimeControl_Init(void);

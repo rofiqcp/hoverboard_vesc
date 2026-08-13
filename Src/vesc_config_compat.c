@@ -466,9 +466,10 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
         r->sensor_type = request_encoder ? MOTOR_SENSOR_ENCODER_AB : MOTOR_SENSOR_HALL_UVW;
         r->sensor_inverted = encoder_inverted ? 1U : 0U;
         r->motor_inverted = invert_direction ? 1U : 0U;
-        while (encoder_offset < 0.0f) encoder_offset += 360.0f;
-        while (encoder_offset >= 360.0f) encoder_offset -= 360.0f;
-        r->encoder_offset_deg = (uint16_t)lrintf(encoder_offset);
+        /* Incremental ABI electrical zero is re-created by the 1-A phase lock
+         * every boot. A persistent encoder offset would double-apply that zero. */
+        (void)encoder_offset;
+        r->encoder_offset_deg = 0U;
         if (encoder_counts >= 4U && encoder_counts <= 65535U) r->encoder_cpr = (uint16_t)encoder_counts;
         if (encoder_ratio >= 1.0f && encoder_ratio <= 60.0f) {
             const long ratio_rounded = lrintf(encoder_ratio);

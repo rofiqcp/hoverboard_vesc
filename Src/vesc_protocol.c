@@ -1112,25 +1112,16 @@ static void auto_detect_service(void)
     case AUTO_DETECT_LEFT_ENCODER:
         if(RuntimeControl_VescPollSensorDetect(true,MOTOR_SENSOR_ENCODER_AB,&res)){
             auto_detect.left_encoder_ok=(res.state==ESC_SENSOR_CAL_SUCCESS);
-            if(auto_detect.left_encoder_ok && RuntimeControl_RequestEncoderSync(true)){
-                auto_detect.stage=AUTO_DETECT_LEFT_SYNC;
-            } else if(auto_detect.left_encoder_ok && RuntimeControl_EncoderElectricalReady(true)) {
-                auto_detect.left_sync_ok=true;
-                auto_detect.result=(auto_detect.right_hall_ok && RuntimeSettings_Save())?2:-1;
-                auto_detect.stage=AUTO_DETECT_REPLY;
-            } else {
-                /* RIGHT proof, when successful, remains committed and usable. */
-                auto_detect.result=-1;
-                auto_detect.stage=AUTO_DETECT_REPLY;
-            }
+            auto_detect.stage=auto_detect.left_encoder_ok ? AUTO_DETECT_LEFT_SYNC : AUTO_DETECT_REPLY;
         }
         break;
     case AUTO_DETECT_LEFT_SYNC:
-        if(!RuntimeControl_EncoderAlignmentActive(true)){
-            auto_detect.left_sync_ok=RuntimeControl_EncoderElectricalReady(true);
+        /* LEFT detect launches phase-0 sync + full steering homing asynchronously.
+         * Wait until both state machines release ownership. */
+        if(!RuntimeControl_EncoderAlignmentActive(true) && RuntimeControl_HomingActiveMask()==0U){
+            auto_detect.left_sync_ok=RuntimeControl_EncoderElectricalReady(true) &&
+                                     RuntimeControl_SteeringReady(true);
             if(auto_detect.right_hall_ok && auto_detect.left_encoder_ok && auto_detect.left_sync_ok){
-                /* Terminal success means BOTH runtime states and EEPROM persistence
-                 * succeeded. A partial board is intentionally reported as failure. */
                 auto_detect.result=RuntimeSettings_Save()?2:-1;
             } else {
                 auto_detect.result=-1;

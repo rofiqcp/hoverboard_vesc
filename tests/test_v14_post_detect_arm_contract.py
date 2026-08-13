@@ -23,7 +23,7 @@ checks = {
     'health_reset_right': 'sensor_health_reset_one(&sensorHealthRight, &motorSensorStateRight);' in runtime,
     # Encoder first ARM uses regulated D-axis current, then returns to pending ARM request.
     'encoder_alignment_start': 'encoder_alignment_start(motor);\n        return;' in runtime,
-    'encoder_alignment_current': 'sensor_cal_set_current_override(encoderAlign.motor, true, forced_angle_q4,' in runtime,
+    'encoder_alignment_current': '1.00 A D-axis phase-0 lock' in runtime and 'sensor_cal_set_current_override(encoderAlign.motor, true, 0,' in runtime,
     'encoder_alignment_proof': 'MotorSensor_SyncEncoderElectricalPhase(state, 0U);' in runtime,
     # No old global requirement that BOTH sensors must be calibrated before either side can arm.
     'no_both_calibrated_gate': 'hall_calibrated && encoder_calibrated' not in runtime,
