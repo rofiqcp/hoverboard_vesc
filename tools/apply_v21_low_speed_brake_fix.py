@@ -27,11 +27,11 @@ rep('Src/motor.c',
     const bool left_current_brake_short =
         motorLeft.m_control_mode == CONTROL_MODE_CURRENT_BRAKE &&
         motorLeft.m_iq_set != 0 && motorSensorSampleLeft.feedback_valid != 0U &&
-        motorSensorSampleLeft.speed_rpm_q4 > -32 && motorSensorSampleLeft.speed_rpm_q4 < 32;
+        motorSensorSampleLeft.mechanical_speed_q4 > -32 && motorSensorSampleLeft.mechanical_speed_q4 < 32;
     const bool right_current_brake_short =
         motorRight.m_control_mode == CONTROL_MODE_CURRENT_BRAKE &&
         motorRight.m_iq_set != 0 && motorSensorSampleRight.feedback_valid != 0U &&
-        motorSensorSampleRight.speed_rpm_q4 > -32 && motorSensorSampleRight.speed_rpm_q4 < 32;
+        motorSensorSampleRight.mechanical_speed_q4 > -32 && motorSensorSampleRight.mechanical_speed_q4 < 32;
     const bool left_low_side_brake = left_full_brake || left_current_brake_short;
     const bool right_low_side_brake = right_full_brake || right_current_brake_short;
 ''','low speed brake flags')
@@ -62,7 +62,7 @@ rep('Src/motor.c',
 
 p=ROOT/'tests/test_v21_dual_motor_runtime.py'; s=p.read_text()
 needle="""def test_dma_architecture_remains_dual_sensor_16k_interleaved_foc():\n"""
-insert="""def test_current_brake_near_zero_uses_same_low_side_short():\n    assert 'left_current_brake_short' in motor and 'right_current_brake_short' in motor\n    assert 'motorSensorSampleLeft.speed_rpm_q4 > -32' in motor\n    assert 'motorSensorSampleRight.speed_rpm_q4 > -32' in motor\n    assert 'left_low_side_brake = left_full_brake || left_current_brake_short' in motor\n    assert 'right_low_side_brake = right_full_brake || right_current_brake_short' in motor\n\n"""
+insert="""def test_current_brake_near_zero_uses_same_low_side_short():\n    assert 'left_current_brake_short' in motor and 'right_current_brake_short' in motor\n    assert 'motorSensorSampleLeft.mechanical_speed_q4 > -32' in motor\n    assert 'motorSensorSampleRight.mechanical_speed_q4 > -32' in motor\n    assert 'left_low_side_brake = left_full_brake || left_current_brake_short' in motor\n    assert 'right_low_side_brake = right_full_brake || right_current_brake_short' in motor\n\n"""
 if insert not in s:
     if needle not in s: raise SystemExit('test insertion anchor missing')
     s=s.replace(needle,insert+needle,1)
