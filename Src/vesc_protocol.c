@@ -1384,7 +1384,7 @@ static void process_ctx(const uint8_t*p,uint16_t n,const vesc_motor_ctx_t *ctx){
  case C_ROTOR_POSITION:(void)send_rotor_position(r,r?display_position_mode_right:display_position_mode_left);break;
  case C_GET_DECODED_ADC:{uint8_t o[17];int32_t k=0;o[k++]=C_GET_DECODED_ADC;vesc_buf_append_i32(o,VescApp_GetDecoded1Micro(),&k);vesc_buf_append_i32(o,VescApp_GetVoltage1MicroV(),&k);vesc_buf_append_i32(o,VescApp_GetDecoded2Micro(),&k);vesc_buf_append_i32(o,VescApp_GetVoltage2MicroV(),&k);send_payload(o,(uint16_t)k);}break;
  case C_GET_MCCONF:case C_GET_MCCONF_DEFAULT:{uint8_t o[VESC_PACKET_MAX_PAYLOAD];o[0]=cmd;int32_t k=VescConfig_SerializeMc(o+1,r,cmd==C_GET_MCCONF_DEFAULT);if(k>0)send_payload(o,(uint16_t)(k+1));}break;
- case C_SET_MCCONF:{if(VescConfig_DeserializeMc(d,l,r,true)){uint8_t o[1]={C_SET_MCCONF};send_payload(o,1);}}break;
+ case C_SET_MCCONF:{(void)VescConfig_DeserializeMc(d,l,r,true);uint8_t o[1]={C_SET_MCCONF};send_payload(o,1);}break;
  case C_GET_APPCONF:case C_GET_APPCONF_DEFAULT:{uint8_t o[VESC_PACKET_MAX_PAYLOAD];o[0]=cmd;int32_t k=VescConfig_SerializeApp(o+1,r,cmd==C_GET_APPCONF_DEFAULT);if(k>0)send_payload(o,(uint16_t)(k+1));}break;
  case C_SET_APPCONF:{if(VescConfig_DeserializeApp(d,l,r,true)){uint8_t o[1]={C_SET_APPCONF};send_payload(o,1);}}break;
  case C_CUSTOM_APP_DATA:custom_app_data(d,l,r);break;

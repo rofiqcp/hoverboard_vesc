@@ -2267,6 +2267,7 @@ class TestSuite:
             assert len(vals) == 0, f"{node} mode {mode} must not stream fake observer data: {vals[:6]}"
             out[f"{node}:{mode}:{label}"] = {"samples": 0, "observer_valid": False}
 
+        out: dict[str, Any] = {}
         cases = [
             ("local", 3, "encoder_raw_mechanical"),
             ("local", 4, "pid_position"),

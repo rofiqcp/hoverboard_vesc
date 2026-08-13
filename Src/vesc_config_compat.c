@@ -319,6 +319,10 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
 
     mc_configuration *c = right ? &motorConfRight : &motorConfLeft;
     MotorRuntimeConfig *r = right ? &motorConfigRight : &motorConfigLeft;
+    const mc_configuration old_c = *c;
+    const MotorRuntimeConfig old_r = *r;
+    PositionPidConfig *pos = right ? &positionPidConfigRight : &positionPidConfigLeft;
+    const PositionPidConfig old_pos = *pos;
 
     i += 4; /* pwm, comm, motor, legacy sensor mode */
     const float current_max = get_auto(b, &i);
@@ -491,8 +495,18 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
     }
 
     mc_foc_conf_prepare(c);
+    pos->kp_q16 = c->p_pid_kp_q16;
+    pos->ki_q16 = c->p_pid_ki_q16;
+    pos->kd_q16 = c->p_pid_kd_q16;
     MotorSensor_PrepareRuntime(r, right ? &motorSensorStateRight : &motorSensorStateLeft, c->foc_motor_pole_pairs);
-    return !store || RuntimeSettings_Save();
+    if (!store) return true;
+    if (RuntimeSettings_Save()) return true;
+    *c = old_c;
+    *r = old_r;
+    *pos = old_pos;
+    mc_foc_conf_prepare(c);
+    MotorSensor_PrepareRuntime(r, right ? &motorSensorStateRight : &motorSensorStateLeft, c->foc_motor_pole_pairs);
+    return false;
 }
 
 int32_t VescConfig_SerializeApp(uint8_t *b, bool right, bool defaults) {

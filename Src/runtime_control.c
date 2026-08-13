@@ -4732,6 +4732,12 @@ bool RuntimeSettings_Save(void)
     w[EEPROM_WORD_VERSION] = EEPROM_CONFIG_VERSION;
     w[EEPROM_WORD_MAX_CURRENT] = (uint16_t)motorConfLeft.l_current_max;
     w[EEPROM_WORD_MAX_SPEED] = (uint16_t)motorConfLeft.l_max_speed_rpm_q4;
+    positionPidConfigLeft.kp_q16 = motorConfLeft.p_pid_kp_q16;
+    positionPidConfigLeft.ki_q16 = motorConfLeft.p_pid_ki_q16;
+    positionPidConfigLeft.kd_q16 = motorConfLeft.p_pid_kd_q16;
+    positionPidConfigRight.kp_q16 = motorConfRight.p_pid_kp_q16;
+    positionPidConfigRight.ki_q16 = motorConfRight.p_pid_ki_q16;
+    positionPidConfigRight.kd_q16 = motorConfRight.p_pid_kd_q16;
     store_foc_words(w, EEPROM_LEFT_FOC_BASE, &motorConfLeft);
     store_foc_words(w, EEPROM_RIGHT_FOC_BASE, &motorConfRight);
     w[EEPROM_LEFT_MOTOR_CONFIG] = MotorRuntimeConfig_PackWord(&motorConfigLeft);

@@ -11,8 +11,10 @@
 #include "vesc_buffer.h"
 #include "config.h"
 #include "motor_current_cal.h"
+#include "runtime_control.h"
 
 mc_configuration motorConfLeft, motorConfRight;
+PositionPidConfig positionPidConfigLeft, positionPidConfigRight;
 MotorRuntimeConfig motorConfigLeft, motorConfigRight;
 MotorSensorState motorSensorStateLeft, motorSensorStateRight;
 VescAppConfig vescAppConfig;
