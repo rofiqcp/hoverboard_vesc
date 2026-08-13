@@ -15,8 +15,6 @@ jobs:
         with:
           ref: v21
           fetch-depth: 0
-      - name: Restore validated test fixture
-        run: git checkout 6a43606b9a34d8df5ce0b826dc77e1d725f2df72 -- tests/test_v14_post_detect_arm_contract.py
       - name: Apply source layer
         run: python3 tools/apply_v21_left_startup_homing.py
       - name: Install validation tools
@@ -38,6 +36,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add Src tools/vesc_full_test.py tests CHANGELOG_V21.md
           if ! git diff --cached --quiet; then
-            git commit -m 'V21: validate corrected output mapping'
+            git commit -m 'V21: prove left encoder phase before closed loop'
             git push origin HEAD:v21
           fi
