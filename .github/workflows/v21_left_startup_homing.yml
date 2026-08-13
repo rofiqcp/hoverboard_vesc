@@ -17,6 +17,16 @@ jobs:
           fetch-depth: 0
       - name: Apply startup and homing patch
         run: python3 tools/apply_v21_left_startup_homing.py
+      - name: Migrate startup alignment contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tests/test_v14_post_detect_arm_contract.py'); s=p.read_text()
+          old="    'encoder_alignment_current': 'sensor_cal_set_current_override(encoderAlign.motor, true, forced_angle_q4,' in runtime,"
+          new="    'encoder_alignment_current': '1.00 A D-axis phase-0 lock' in runtime and 'sensor_cal_set_current_override(encoderAlign.motor, true, 0,' in runtime,"
+          if s.count(old)!=1: raise SystemExit('alignment contract anchor')
+          p.write_text(s.replace(old,new,1))
+          PY
       - name: Install tools
         run: python3 -m pip install --disable-pip-version-check pytest platformio
       - name: Python regressions
