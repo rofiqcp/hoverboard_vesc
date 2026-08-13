@@ -1,0 +1,3 @@
+PY_COMPILE_IMPORT_PASS release=V10 hbts=9
+{'roundtrip_lengths': [1, 99, 300], 'crc_123456789': '0x31C3', 'hbts_decode_len': 313}
+PYTHON_TESTER_SELFTEST_PASS

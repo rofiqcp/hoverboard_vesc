@@ -1,0 +1,75 @@
+HOVERBOARD VESC FULL TEST SUMMARY
+Tester release: V20
+Generated: 2026-08-13T15:32:16.991+07:00
+PASS=26 FAIL=35 WARN=1 SKIP=4
+
+[PASS] 00_protocol_self_test (0.002s) 
+[PASS] 01_open_serial (0.004s) 
+[PASS] 02_connection_inventory (0.141s) 
+[PASS] 03_connect_is_disarmed (0.110s) 
+[WARN] 04_current_offset_raw_spikes (0.000s) 
+[PASS] 04_current_offset_calibration (0.366s) 
+[PASS] 04a_no_false_drv_mapping (0.153s) 
+[PASS] 05_prepare_safe_uart_test_mode (0.581s) 
+[PASS] 06_idle_telemetry_id_iq_imotor (1.261s) 
+[FAIL] 06a_protocol_get_matrix (1.561s) TimeoutError: VESC response timeout after 1.5s
+[PASS] 06b_passive_spin_cross_side_isolation (6.759s) 
+[PASS] 06c_zero_set_virtual_can_routing (2.602s) 
+[PASS] 07_adc_pa2_pa3 (0.273s) 
+[PASS] 08_config_read_roundtrip (1.047s) 
+[PASS] 10_crc_parser_recovery (0.060s) 
+[PASS] 11_integrated_auto_detect_left_encoder_right_hall (29.055s) 
+[PASS] 13_post_detect_diag_left (0.054s) 
+[PASS] 14_post_detect_diag_right (0.054s) 
+[FAIL] 14a_rotor_position_stream_modes (0.207s) NameError: name 'out' is not defined
+[SKIP] 14b_left_full_0_360_homing_calibration (0.000s) 
+[SKIP] 14c_left_homing_on_boot_eeprom (0.000s) 
+[PASS] 09_app_uart_adc_adc_uart (1.744s) 
+[PASS] 15_left_duty_pos (1.154s) 
+[PASS] 15_left_duty_pos_release (0.577s) 
+[PASS] 16_left_duty_neg (1.152s) 
+[PASS] 16_left_duty_neg_release (0.577s) 
+[PASS] 17_left_current_pos (1.149s) 
+[PASS] 17_left_current_pos_release (0.577s) 
+[PASS] 18_left_current_neg (1.159s) 
+[PASS] 18_left_current_neg_release (0.577s) 
+[FAIL] 19_left_rpm_pos (1.154s) ERPM no signed motion: [-1, 4, 1, 1]
+[PASS] 19_left_rpm_pos_release (0.577s) 
+[FAIL] 20_left_rpm_neg (0.780s) SerialException: device reports readiness to read but returned no data (device disconnected or multiple access on port?)
+[FAIL] 20_left_rpm_neg_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 20a_left_brake (0.000s) error: (5, 'Input/output error')
+[FAIL] 20a_left_brake_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 20aa_left_handbrake (0.000s) error: (5, 'Input/output error')
+[FAIL] 20aa_left_handbrake_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 20b_left_current_rel (0.000s) error: (5, 'Input/output error')
+[FAIL] 20b_left_current_rel_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 21_left_position_0_360 (0.000s) error: (5, 'Input/output error')
+[FAIL] 21_left_position_0_360_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 22_right_duty_pos (0.000s) error: (5, 'Input/output error')
+[FAIL] 22_right_duty_pos_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 23_right_duty_neg (0.000s) error: (5, 'Input/output error')
+[FAIL] 23_right_duty_neg_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 24_right_current_pos (0.000s) error: (5, 'Input/output error')
+[FAIL] 24_right_current_pos_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 25_right_current_neg (0.000s) error: (5, 'Input/output error')
+[FAIL] 25_right_current_neg_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 26_right_rpm_pos (0.000s) error: (5, 'Input/output error')
+[FAIL] 26_right_rpm_pos_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 27_right_rpm_neg (0.000s) error: (5, 'Input/output error')
+[FAIL] 27_right_rpm_neg_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 27a_right_brake (0.000s) error: (5, 'Input/output error')
+[FAIL] 27a_right_brake_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 27aa_right_handbrake (0.000s) error: (5, 'Input/output error')
+[FAIL] 27aa_right_handbrake_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 27b_right_current_rel (0.000s) error: (5, 'Input/output error')
+[FAIL] 27b_right_current_rel_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[FAIL] 28_right_position_0_360 (0.001s) error: (5, 'Input/output error')
+[FAIL] 28_right_position_0_360_release (0.001s) SerialException: write failed: [Errno 5] Input/output error
+[SKIP] 29_local_fault_stop_3s (0.000s) 
+[SKIP] 30_right_fault_stop_3s (0.000s) 
+[FAIL] 90_final_left_diag (0.000s) error: (5, 'Input/output error')
+[FAIL] 91_final_right_diag (0.000s) error: (5, 'Input/output error')
+
+Kirim SELURUH folder log ini saat troubleshooting, terutama:
+session.log, results.json, diagnostics.csv, detect_transaction_trace.csv, telemetry.csv, raw_packets.log,
+set_command_trace.csv, set_command_contract.csv, vesc_standard_wire.jsonl

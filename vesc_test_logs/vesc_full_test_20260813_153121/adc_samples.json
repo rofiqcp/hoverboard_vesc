@@ -1,0 +1,32 @@
+[
+  {
+    "decoded1": 0.0,
+    "voltage1_V": 1.74,
+    "decoded2": 0.0,
+    "voltage2_V": 1.61
+  },
+  {
+    "decoded1": 0.0,
+    "voltage1_V": 1.737,
+    "decoded2": 0.0,
+    "voltage2_V": 1.598
+  },
+  {
+    "decoded1": 0.0,
+    "voltage1_V": 1.68,
+    "decoded2": 0.0,
+    "voltage2_V": 1.556
+  },
+  {
+    "decoded1": 0.0,
+    "voltage1_V": 1.703,
+    "decoded2": 0.0,
+    "voltage2_V": 1.588
+  },
+  {
+    "decoded1": 0.0,
+    "voltage1_V": 1.717,
+    "decoded2": 0.0,
+    "voltage2_V": 1.575
+  }
+]

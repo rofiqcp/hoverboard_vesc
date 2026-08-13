@@ -1,0 +1,12 @@
+V15 RELEASE STATUS
+==================
+Host regression: PASS 19/19
+Cortex-M3 hot-path codegen audit: PASS
+Python protocol/HBTS self-test: PASS
+Physical board compile/upload/run: NOT EXECUTED in this environment (PlatformIO/board unavailable)
+
+Critical hardware targets for first V15 run:
+- LEFT encoder Detect SUCCESS using cumulative transaction edge proof.
+- RIGHT Hall Detect SUCCESS; Hall sensor_type=0 must not be treated as missing.
+- Duty/Current/RPM/POS non-zero tests must execute, not SKIP.
+- Both current loops execute every ~16-kHz DMA ISR; review actual isr_last/max cycles.

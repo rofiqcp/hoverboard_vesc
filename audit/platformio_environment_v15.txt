@@ -1,0 +1,5 @@
+release=V15
+date_utc=2026-08-12T19:00:28+00:00
+pio_path=NOT_AVAILABLE
+physical_board=NOT_AVAILABLE_IN_THIS_ENVIRONMENT
+note=PlatformIO upload and physical ISR timing must be validated on the user's STM32F103RCT6 board.

@@ -1,0 +1,26 @@
+V8 HARDWARE STATUS
+==================
+
+Grounded hardware evidence available:
+- User V7 PlatformIO build/link/upload/verify: SUCCESS.
+- V7 build warning: unused static motor_current_amp() in Src/vesc_protocol.c.
+- User V7 one-shot test: vesc_full_test_20260812_192448.zip.
+- V7 current-zero calibration: PASS.
+- V7 LEFT encoder detect: FAIL; requested <1 A while phase-current feedback measured ~27-35 A.
+- V7 RIGHT Hall preflight failure: tester stale-node bug; actual RIGHT Hall was 001 at connect/final.
+
+V8 offline verification in this environment:
+- Host regression: 12/12 PASS.
+- Cortex-M3 hot-path codegen audit: PASS, no runtime division helpers in current FOC, encoder update or DMA current ISR.
+- Python tester HBTS/parser self-test: PASS.
+- Python syntax: PASS.
+- Unused motor_current_amp() removed.
+
+Not yet proven on physical V8 hardware from this environment:
+- PlatformIO V8 target link/upload.
+- V8 fast-current guard behavior on the user's motor/power stage.
+- V8 LEFT encoder detect success.
+- V8 RIGHT Hall detect success.
+- V8 Duty/Current/RPM/Position closed-loop motion.
+
+The next user run should use RUN_BUILD_UPLOAD_TEST_LINUX.sh /dev/ttyUSB0 and return the generated vesc_full_test_*.zip.

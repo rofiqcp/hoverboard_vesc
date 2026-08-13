@@ -1,0 +1,61 @@
+V20 RELEASE VALIDATION
+======================
+
+Host regression: 28/28 PASS
+- strict FOC/sensor/ISR/runtime syntax with -Wall -Wextra -Werror
+- VESC compatibility syntax including vesc_protocol.c with -Werror
+- FOC/sensor behavior
+- MTPA/FW numeric tests
+- SVM compare
+- trig LUT
+- packet/CRC/parser
+- MCCONF wire/config policy
+- APP ADC
+- resource/pin/ADC contract
+- current calibration robustness
+- UBSan stress
+- tester inventory + command coverage
+- V12..V19 regression contracts
+- V20 LEFT/position/rotor/VdVq/protocol contract
+
+V20 protocol-memory fixes:
+- COMM_FW_VERSION buffer: 128 bytes + bounded string append
+- HBTS v15 buffer: 512 bytes
+- synthetic HBTS payload: 453 bytes
+
+LEFT encoder electrical sync contract:
+- 0-degree D-axis settle
+- +120 electrical-degree slow probe
+- raw TIM4 signed direction proof >= 2 counts magnitude
+- return to 0 degrees
+- no direction proof => no electrical READY
+- proven direction persisted after bridge release if changed
+
+Position contract:
+- SET_POS logical 0..360 maps once into a signed raw-sensor span
+- motor direction is not applied a second time to absolute PID ticks
+- homing span sanity uses absolute magnitude
+
+Rotor/VdVq contract:
+- Detect, Encoder, PID Pos and PID Error have distinct data sources
+- no fake Observer/observer-error stream without a real flux observer
+- GET_VALUES bits 19/20 carry Vd/Vq in volts at VESC scale 1e3
+- Vd/Vq accumulation runs in 200-Hz telemetry; DMA ISR unchanged
+
+Cortex-M3 hot paths:
+FAST_CURRENT_LOOP_DIV_HELPERS=0
+FAST_ENCODER_UPDATE_DIV_HELPERS=0
+FAST_DMA_CURRENT_ISR_DIV_HELPERS=0
+CORTEX_M3_CORE_OBJECT_PASS
+
+Python tester self-test:
+tester_release=V20
+HBTS_VERSION=15
+HBTS decode length=453 bytes
+packet 1/99/300-byte roundtrip PASS
+CRC-16 123456789 = 0x31C3 PASS
+
+PlatformIO / physical board:
+PlatformIO CLI and physical hoverboard hardware are not available in the release
+environment. V20 therefore does NOT claim physical hardware PASS until flashed and
+the V20 hardware log is returned.
