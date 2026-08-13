@@ -39,40 +39,16 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          p=Path('tests/test_v14_post_detect_arm_contract.py')
-          s=p.read_text()
-          old="'side_local_feedback': 'prearm_feedback_not_ready(mode, requested_target, cfg, sample, encoder_aligned)' in runtime and '(mode == ESC_MODE_DUTY && target == 0)' in runtime,"
-          new="'side_local_feedback': 'prearm_feedback_not_ready(mode, requested_target, cfg, sample, encoder_aligned)' in runtime and '(mode == ESC_MODE_DUTY && target == 0)' not in runtime and 'mode == ESC_MODE_OPEN || mode == ESC_MODE_HANDBRAKE' in runtime,"
-          if old not in s: raise SystemExit('V14 readiness contract anchor missing')
-          s=s.replace(old,new,1)
-          s=s.replace('# V21 follows VESC Tool: SET_DUTY(0) is Full Brake and therefore remains armed.', '# SET_DUTY(0) remains DUTY but does not bypass normal sensor/FOC readiness.',1)
-          p.write_text(s)
-
-          p=Path('tests/test_resource_contract.py')
-          s=p.read_text()
-          if 'VESC_CURRENT_HOLD_MAX_MS 100U' not in s: raise SystemExit('resource telemetry contract anchor missing')
-          p.write_text(s.replace('VESC_CURRENT_HOLD_MAX_MS 100U','VESC_CURRENT_HOLD_MAX_MS 25U',1))
-
-          p=Path('tests/test_v18_rpm_current_brake_contract.py')
-          s=p.read_text()
-          old="""assert 'speed_q4 > -32 && speed_q4 < 32' in foc_c
-assert 'speed_q4 < 0 ? mag : (int16_t)-mag' in foc_c"""
-          new="""assert 'if (speed_q4 < 0) iq_target = mag;' in foc_c
-assert 'else if (speed_q4 > 0) iq_target = (int16_t)-mag;' in foc_c
-assert 'else iq_target = 0;' in foc_c
-assert 'speed_q4 > -32 && speed_q4 < 32' not in foc_c"""
-          if old not in s: raise SystemExit('V18 brake contract anchor missing')
-          p.write_text(s.replace(old,new,1))
-
-          p=Path('tests/test_v19_integrated_position_sync_home.py')
-          s=p.read_text()
-          if 'NB_OF_VAR             ((uint8_t)158U)' not in s: raise SystemExit('V19 EEPROM contract anchor missing')
-          s=s.replace('NB_OF_VAR             ((uint8_t)158U)','NB_OF_VAR             ((uint8_t)162U)',1)
-          s=s.replace('# EEPROM image owns encoder ratio plus both mechanical calibration records.', '# EEPROM image owns encoder ratio, mechanical calibration, and independent LEFT/RIGHT current limits.',1)
-          p.write_text(s)
-
-          Path('tests/test_v21_dual_motor_runtime.py').write_text('''from pathlib import Path\nROOT=Path(__file__).resolve().parents[1]\nproto=(ROOT/"Src/vesc_protocol.c").read_text()\nruntime=(ROOT/"Src/runtime_control.c").read_text()\nmotor=(ROOT/"Src/motor.c").read_text()\nfoc=(ROOT/"Src/foc_motor.c").read_text()\ntester=(ROOT/"tools/vesc_full_test.py").read_text()\n\ndef test_apply_all_commissions_right_before_left_and_preserves_partial_right():\n    block=proto[proto.index("static void auto_detect_service"):proto.index("static void send_print")]\n    assert block.index("case AUTO_DETECT_RIGHT_HALL") < block.index("case AUTO_DETECT_LEFT_ENCODER")\n    assert "auto_detect.right_hall_ok=(res.state==ESC_SENSOR_CAL_SUCCESS);" in block\n    assert "Continue LEFT regardless of RIGHT result" in block\n    assert "RIGHT proof, when successful, remains committed and usable" in block\n\ndef test_duty_zero_is_normal_foc_command_and_stop_is_release():\n    assert "(mode == ESC_MODE_DUTY && target == 0)" not in runtime\n    assert "const bool run=true; /* SET_DUTY(0) is VESC Tool Full Brake, not release. */" in proto\n    assert "const bool run=v!=0;" in proto\n    assert "mode == ESC_MODE_OPEN || mode == ESC_MODE_HANDBRAKE" in runtime\n\ndef test_v20_hot_isr_is_preserved_without_v21_brake_shortcuts():\n    for token in ("left_full_brake","right_full_brake","left_low_side_brake","right_low_side_brake","left_current_brake_short","right_current_brake_short"):\n        assert token not in motor\n    assert "MotorSensor_UpdateHardwareEncoder(&motorConfigLeft" in motor\n    assert "MotorSensor_Update(&motorConfigRight" in motor\n    assert "const bool run_right_slot = motorFocSlotRight;" in motor\n    assert "motorFocSlotRight = !motorFocSlotRight;" in motor\n\ndef test_current_brake_is_dynamic_speed_opposition_not_forced_low_side_short():\n    assert "motor->m_control_mode == CONTROL_MODE_CURRENT_BRAKE" in foc\n    assert "if (speed_q4 < 0) iq_target = mag;" in foc\n    assert "else if (speed_q4 > 0) iq_target = (int16_t)-mag;" in foc\n    assert "else iq_target = 0;" in foc\n    assert "left_current_brake_short" not in motor\n\ndef test_tester_runs_each_side_from_actual_post_detect_readiness():\n    assert 'left_ready = bool(post_left and post_left.get("calibrated"))' in tester\n    assert 'right_ready = bool(post_right and post_right.get("calibrated"))' in tester\n    assert 'skip=not left_ready' in tester\n    assert 'skip=not right_ready' in tester\n    assert 'left_ready or right_ready' in tester\n    assert 'default=65.0' in tester\n''')
+          def rep(path, old, new):
+              p=Path(path); s=p.read_text()
+              if s.count(old)!=1: raise SystemExit(f'{path}: expected one contract anchor, got {s.count(old)}')
+              p.write_text(s.replace(old,new,1))
+          rep('tests/test_v14_post_detect_arm_contract.py', "'side_local_feedback': 'prearm_feedback_not_ready(mode, requested_target, cfg, sample, encoder_aligned)' in runtime and '(mode == ESC_MODE_DUTY && target == 0)' in runtime,", "'side_local_feedback': 'prearm_feedback_not_ready(mode, requested_target, cfg, sample, encoder_aligned)' in runtime and '(mode == ESC_MODE_DUTY && target == 0)' not in runtime and 'mode == ESC_MODE_OPEN || mode == ESC_MODE_HANDBRAKE' in runtime,")
+          rep('tests/test_resource_contract.py', "assert 'VESC_CURRENT_HOLD_MAX_MS 100U' in protocol", "assert 'VESC_CURRENT_HOLD_MAX_MS 25U' in protocol")
+          rep('tests/test_v18_rpm_current_brake_contract.py', "assert 'speed_q4 > -32 && speed_q4 < 32' in foc_c\nassert 'speed_q4 < 0 ? mag : (int16_t)-mag' in foc_c", "assert 'if (speed_q4 < 0) iq_target = mag;' in foc_c\nassert 'else if (speed_q4 > 0) iq_target = (int16_t)-mag;' in foc_c\nassert 'else iq_target = 0;' in foc_c\nassert 'speed_q4 > -32 && speed_q4 < 32' not in foc_c")
+          rep('tests/test_v19_integrated_position_sync_home.py', 'assert "NB_OF_VAR             ((uint8_t)158U)" in eeprom_h', 'assert "NB_OF_VAR             ((uint8_t)162U)" in eeprom_h')
+          obsolete=Path('tests/test_v21_dual_motor_runtime.py')
+          if obsolete.exists(): obsolete.unlink()
           PY
 
       - name: Install validation tools
