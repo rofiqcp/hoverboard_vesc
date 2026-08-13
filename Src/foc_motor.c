@@ -899,6 +899,7 @@ void mc_foc_run_current_control(motor_all_state_t *motor,
     if (motor == NULL || motor->m_conf == NULL || sample == NULL || output == NULL || pwm_period == 0U) {
         return;
     }
+    output->zero_duty_phase_brake = false;
 
     mc_configuration *conf = motor->m_conf;
     motor_state_t *state = &motor->m_motor_state;
@@ -954,6 +955,21 @@ void mc_foc_run_current_control(motor_all_state_t *motor,
         state->duty_abs_filtered_q15 = 0U;
         state->mod_q_filter = 0;
         output_observation_only(output, state, sample);
+        return;
+    }
+
+    if (motor->m_control_mode == CONTROL_MODE_DUTY &&
+        motor->m_duty_cycle_set_q15 == 0) {
+        reset_current_integrators(state);
+        motor->m_i_fw_set = 0;
+        motor->m_i_fw_set_q16 = 0;
+        state->id_target = 0; state->iq_target = 0;
+        state->vd = 0; state->vq = 0;
+        state->mod_d = 0; state->mod_q = 0;
+        state->pwm_a = 0; state->pwm_b = 0; state->pwm_c = 0;
+        output_observation_only(output, state, sample);
+        output->duty_abs_q15 = 0U;
+        output->zero_duty_phase_brake = true;
         return;
     }
 

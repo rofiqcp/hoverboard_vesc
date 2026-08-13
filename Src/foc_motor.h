@@ -214,6 +214,7 @@ typedef struct {
     int16_t iq_target;
     int16_t fw_current;
     uint16_t duty_abs_q15;
+    bool zero_duty_phase_brake;
     int16_t speed_rpm;
     int16_t electrical_angle_deg;
     uint8_t fault_code;

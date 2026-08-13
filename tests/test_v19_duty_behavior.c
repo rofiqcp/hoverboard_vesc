@@ -40,6 +40,14 @@ int main(void) {
     const uint16_t high = run_duty(&conf, d90, conf.l_current_max);
     const uint16_t neg = run_duty(&conf, (int16_t)-d90, conf.l_current_min);
 
+    motor_all_state_t z; mc_foc_output_t zo; mc_foc_sample_t zs;
+    memset(&zs, 0, sizeof(zs)); zs.output_enabled=true; zs.feedback_valid=true;
+    mc_foc_init(&z,&conf); mc_foc_set_control_mode(&z,CONTROL_MODE_DUTY);
+    z.m_duty_cycle_set_q15=0; z.m_iq_set=conf.l_current_max;
+    mc_foc_run_current_control(&z,&zs,&zo,2000U);
+    assert(zo.zero_duty_phase_brake);
+    assert(zo.duty_abs_q15==0U);
+
     /* 3% duty must remain a low-modulation command; 90% must materially open the
      * modulation ceiling instead of behaving like the old low-duty/raw-Vq path. */
     assert(low > (uint16_t)(d03 / 2));

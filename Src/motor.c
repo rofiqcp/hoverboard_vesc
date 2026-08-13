@@ -664,6 +664,10 @@ static uint16_t pwm_compare_from_centered_duty(int16_t duty)
 
 static void set_pwm_left(const mc_foc_output_t *out)
 {
+    if (out->zero_duty_phase_brake) {
+        set_current_zero_vector_left();
+        return;
+    }
     LEFT_TIM->LEFT_TIM_U = pwm_compare_from_centered_duty(out->duty_a);
     LEFT_TIM->LEFT_TIM_V = pwm_compare_from_centered_duty(out->duty_b);
     LEFT_TIM->LEFT_TIM_W = pwm_compare_from_centered_duty(out->duty_c);
@@ -671,6 +675,10 @@ static void set_pwm_left(const mc_foc_output_t *out)
 
 static void set_pwm_right(const mc_foc_output_t *out)
 {
+    if (out->zero_duty_phase_brake) {
+        set_current_zero_vector_right();
+        return;
+    }
     RIGHT_TIM->RIGHT_TIM_U = pwm_compare_from_centered_duty(out->duty_a);
     RIGHT_TIM->RIGHT_TIM_V = pwm_compare_from_centered_duty(out->duty_b);
     RIGHT_TIM->RIGHT_TIM_W = pwm_compare_from_centered_duty(out->duty_c);
