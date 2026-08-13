@@ -35,6 +35,21 @@ jobs:
       - name: Apply 19:23 hardware regression patch
         run: python3 tools/apply_v21_hwlog_192318_fix.py
 
+      - name: Migrate V14 DUTY-zero readiness contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tests/test_v14_post_detect_arm_contract.py')
+          s=p.read_text()
+          old="'side_local_feedback': 'prearm_feedback_not_ready(mode, requested_target, cfg, sample, encoder_aligned)' in runtime and '(mode == ESC_MODE_DUTY && target == 0)' in runtime,"
+          new="'side_local_feedback': 'prearm_feedback_not_ready(mode, requested_target, cfg, sample, encoder_aligned)' in runtime and '(mode == ESC_MODE_DUTY && target == 0)' not in runtime and 'mode == ESC_MODE_OPEN || mode == ESC_MODE_HANDBRAKE' in runtime,"
+          if old not in s:
+              raise SystemExit('V14 side_local_feedback contract anchor missing')
+          s=s.replace(old,new,1)
+          s=s.replace('# V21 follows VESC Tool: SET_DUTY(0) is Full Brake and therefore remains armed.', '# SET_DUTY(0) is a DUTY command but does not bypass normal sensor/FOC readiness.',1)
+          p.write_text(s)
+          PY
+
       - name: Install validation tools
         run: python3 -m pip install --disable-pip-version-check pytest platformio
 
