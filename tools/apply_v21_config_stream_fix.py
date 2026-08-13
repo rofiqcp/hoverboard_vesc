@@ -42,8 +42,11 @@ if 'out: dict[str, Any] = {}' not in s[start:case]:
     s=s[:case]+'        out: dict[str, Any] = {}\n'+s[case:]
 p.write_text(s)
 
-# Standalone MCCONF unit links vesc_config_compat without runtime_control.c, so it
-# must provide the two mirror globals now referenced transactionally.
+# Standalone MCCONF unit links vesc_config_compat without runtime_control.c.
+rep('tests/test_vesc_config_wire.c',
+'''#include "motor_current_cal.h"\n''',
+'''#include "motor_current_cal.h"\n#include "runtime_control.h"\n''',
+'host fixture runtime type include')
 rep('tests/test_vesc_config_wire.c',
 '''mc_configuration motorConfLeft, motorConfRight;\nMotorRuntimeConfig motorConfigLeft, motorConfigRight;''',
 '''mc_configuration motorConfLeft, motorConfRight;\nPositionPidConfig positionPidConfigLeft, positionPidConfigRight;\nMotorRuntimeConfig motorConfigLeft, motorConfigRight;''',
