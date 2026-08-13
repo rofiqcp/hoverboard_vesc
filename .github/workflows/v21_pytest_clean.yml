@@ -1,0 +1,19 @@
+name: V21 clean pytest validation
+
+on:
+  push:
+    branches: [v21]
+    paths:
+      - 'pytest.ini'
+      - '.github/workflows/v21_pytest_clean.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v21
+      - run: python3 -m pip install --disable-pip-version-check pytest
+      - name: Run regression suite with warnings as errors
+        run: python3 -m pytest -q -W error
