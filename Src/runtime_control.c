@@ -445,10 +445,11 @@ static void set_arm_reject(bool left, uint8_t reason)
 
 /* EEPROM emulation memerlukan tabel seluruh virtual address yang ikut page transfer. */
 uint16_t VirtAddVarTab[NB_OF_VAR] = {
-    2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026,2027,2028,2029,2030,2031,2032,2033,2034,2035,2036,2037,2038,2039,2040,2041,2042,2043,2044,2045,2046,2047,2048,2049,2050,2051,2052,2053,2054,2055,2056,2057,2058,2059,2060,2061,2062,2063,2064,2065,2066,2067,2068,2069,2070,2071,2072,2073,2074,2075,2076,2077,2078,2079,2080,2081,2082,2083,2084,2085,2086,2087,2088,2089,2090,2091,2092,2093,2094,2095,2096,2097,2098,2099,2100,2101,2102,2103,2104,2105,2106,2107,2108,2109,2110,2111,2112,2113,2114,2115,2116,2117,2118,2119,2120,2121,2122,2123,2124,2125,2126,2127,2128,2129,2130,2131,2132,2133,2134,2135,2136,2137,2138,2139,2140,2141,2142,2143,2144,2145,2146,2147,2148,2149,2150,2151,2152,2153,2154,2155,2156,2157
+    2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026,2027,2028,2029,2030,2031,2032,2033,2034,2035,2036,2037,2038,2039,2040,2041,2042,2043,2044,2045,2046,2047,2048,2049,2050,2051,2052,2053,2054,2055,2056,2057,2058,2059,2060,2061,2062,2063,2064,2065,2066,2067,2068,2069,2070,2071,2072,2073,2074,2075,2076,2077,2078,2079,2080,2081,2082,2083,2084,2085,2086,2087,2088,2089,2090,2091,2092,2093,2094,2095,2096,2097,2098,2099,2100,2101,2102,2103,2104,2105,2106,2107,2108,2109,2110,2111,2112,2113,2114,2115,2116,2117,2118,2119,2120,2121,2122,2123,2124,2125,2126,2127,2128,2129,2130,2131,2132,2133,2134,2135,2136,2137,2138,2139,2140,2141,2142,2143,2144,2145,2146,2147,2148,2149,2150,2151,2152,2153,2154,2155,2156,2157,2158,2159,2160,2161
 };
 
-#define EEPROM_CONFIG_VERSION 18U
+#define EEPROM_CONFIG_VERSION 19U
+#define EEPROM_CONFIG_VERSION_V18 18U
 #define EEPROM_CONFIG_VERSION_V17 17U
 #define EEPROM_CONFIG_VERSION_V16 16U
 #define EEPROM_CONFIG_VERSION_V15 15U
@@ -539,6 +540,10 @@ uint16_t VirtAddVarTab[NB_OF_VAR] = {
 #define EEPROM_RIGHT_STEER_CAL                155U
 #define EEPROM_LEFT_GEAR_RATIO_MILLI          156U
 #define EEPROM_RIGHT_GEAR_RATIO_MILLI         157U
+#define EEPROM_LEFT_CURRENT_MAX                158U
+#define EEPROM_LEFT_CURRENT_MIN                159U
+#define EEPROM_RIGHT_CURRENT_MAX               160U
+#define EEPROM_RIGHT_CURRENT_MIN               161U
 
 static int32_t clamp_i32(int32_t value, int32_t lower, int32_t upper)
 {
@@ -2350,11 +2355,12 @@ static bool prearm_feedback_not_ready(uint8_t mode, int32_t target,
                                       const MotorRuntimeConfig *cfg,
                                       const MotorSensorSample *sample, bool encoder_aligned)
 {
-    /* VESC Full Brake is SET_DUTY(0). It does not need rotor angle because the
-     * F103 implementation shorts all three low sides directly. OPEN and
-     * handbrake also own their phase independently from the feedback backend. */
-    if (mode == ESC_MODE_OPEN || mode == ESC_MODE_HANDBRAKE ||
-        (mode == ESC_MODE_DUTY && target == 0)) return false;
+    /* OPEN and handbrake own their phase independently. SET_DUTY(0) remains
+     * the normal VESC DUTY control state at zero modulation; static low-side
+     * shorting is only a separate foc_short_ls_on_zero_duty policy upstream and
+     * must not bypass this board's proven sensored FOC/ADC path. */
+    (void)target;
+    if (mode == ESC_MODE_OPEN || mode == ESC_MODE_HANDBRAKE) return false;
     if (cfg == NULL || sample == NULL) return true;
     if (cfg->sensor_type == MOTOR_SENSOR_HALL_UVW) {
         return cfg->hall_calibrated == 0U || cfg->hall_lut_valid == 0U ||
@@ -3074,7 +3080,18 @@ static void apply_runtime_target_one(bool left, uint8_t mode, int32_t host_setpo
          * so also negates a nonzero home origin and was the remaining RIGHT POS
          * error when motor_inverted was enabled. */
         motor->m_pos_pid_set = target_host;
-        const int16_t iq = mc_foc_run_pid_control_pos(motor, dt_ms);
+        int16_t iq = mc_foc_run_pid_control_pos(motor, dt_ms);
+        if (cfg->sensor_type == MOTOR_SENSOR_HALL_UVW) {
+            /* One Hall sector is about 4 mechanical degrees at 15 pole-pairs.
+             * Limit the coarse Hall position loop to 1 A so one sector of error
+             * cannot command the full 15-A current limit. Encoder POS is not
+             * affected. */
+            int16_t hall_cap = (int16_t)CONTROL_CURRENT_INTERNAL_PER_A;
+            if (hall_cap > conf->l_current_max) hall_cap = conf->l_current_max;
+            if (iq > hall_cap) iq = hall_cap;
+            if (iq < -hall_cap) iq = (int16_t)-hall_cap;
+            motor->m_iq_set = iq;
+        }
         *runtime_command = iq_to_host_permille(cfg, conf, iq);
         return;
     }
@@ -4757,6 +4774,10 @@ bool RuntimeSettings_Save(void)
     w[EEPROM_RIGHT_STEER_CAL] = steeringCalibrationRight.calibrated ? 1U : 0U;
     w[EEPROM_LEFT_GEAR_RATIO_MILLI] = motorConfLeft.si_gear_ratio_milli;
     w[EEPROM_RIGHT_GEAR_RATIO_MILLI] = motorConfRight.si_gear_ratio_milli;
+    w[EEPROM_LEFT_CURRENT_MAX] = (uint16_t)motorConfLeft.l_current_max;
+    w[EEPROM_LEFT_CURRENT_MIN] = (uint16_t)motorConfLeft.l_current_min;
+    w[EEPROM_RIGHT_CURRENT_MAX] = (uint16_t)motorConfRight.l_current_max;
+    w[EEPROM_RIGHT_CURRENT_MIN] = (uint16_t)motorConfRight.l_current_min;
     w[EEPROM_WORD_GENERATION] = (uint16_t)(eepromGeneration + 1U);
     if (w[EEPROM_WORD_GENERATION] == 0U) w[EEPROM_WORD_GENERATION] = 1U;
     w[EEPROM_WORD_CRC] = eeprom_crc_current_image(w);
@@ -4828,7 +4849,8 @@ static bool persistent_config_valid(const mc_configuration *left,
 
     const mc_configuration *conf[2] = {left, right};
     for (uint8_t i = 0U; i < 2U; ++i) {
-        if (conf[i]->l_current_max <= 0 || conf[i]->l_current_max != (int16_t)max_current_word) return false;
+        if (conf[i]->l_current_max <= 0 || conf[i]->l_current_max > 12000 ||
+            conf[i]->l_current_min >= 0 || conf[i]->l_current_min < -12000) return false;
         if (conf[i]->l_max_speed_rpm_q4 <= 0 || conf[i]->l_max_speed_rpm_q4 != (int16_t)max_speed_word) return false;
         if (conf[i]->l_max_voltage <= 0) return false;
         if (conf[i]->foc_current_kp_q16 < 0 || conf[i]->foc_current_ki_q16 < 0) return false;
@@ -4884,13 +4906,14 @@ bool RuntimeSettings_Load(void)
     const bool version_v11 = (version == EEPROM_CONFIG_VERSION_V11);
     const bool version_v12 = (version == EEPROM_CONFIG_VERSION_V12);
     const bool version_v13 = (version == EEPROM_CONFIG_VERSION_V13);
+    const bool version_v18 = (version == EEPROM_CONFIG_VERSION_V18);
     const bool version_v17 = (version == EEPROM_CONFIG_VERSION_V17);
     const bool version_v16 = (version == EEPROM_CONFIG_VERSION_V16);
     const bool version_v15 = (version == EEPROM_CONFIG_VERSION_V15);
     const bool version_v14 = (version == EEPROM_CONFIG_VERSION_V14);
     const bool current_version = (version == EEPROM_CONFIG_VERSION);
     if (w[EEPROM_WORD_KEY] != FLASH_WRITE_KEY ||
-        (!version_v5 && !version_v6 && !version_v7 && !version_v8 && !version_v9 && !version_v10 && !version_v11 && !version_v12 && !version_v13 && !version_v14 && !version_v15 && !version_v16 && !version_v17 && !current_version)) return false;
+        (!version_v5 && !version_v6 && !version_v7 && !version_v8 && !version_v9 && !version_v10 && !version_v11 && !version_v12 && !version_v13 && !version_v14 && !version_v15 && !version_v16 && !version_v17 && !version_v18 && !current_version)) return false;
 
     /* v7: homing 64..69; v8: auto-home 70..71; v9-v11: Hall LUT 72..75;
      * v12-v14: persistent Encoder 4-state sequence 76..77. v15 adds MTPA/FW and advanced outer-loop configuration 78..119;
@@ -5039,7 +5062,7 @@ bool RuntimeSettings_Load(void)
         if (w[EEPROM_RIGHT_POLE_PAIRS] >= 1U && w[EEPROM_RIGHT_POLE_PAIRS] <= 60U)
             right.foc_motor_pole_pairs = (uint8_t)w[EEPROM_RIGHT_POLE_PAIRS];
     }
-    if (current_version) {
+    if (version_v18 || current_version) {
         if (w[EEPROM_LEFT_GEAR_RATIO_MILLI] < 1U || w[EEPROM_LEFT_GEAR_RATIO_MILLI] > 60000U ||
             w[EEPROM_RIGHT_GEAR_RATIO_MILLI] < 1U || w[EEPROM_RIGHT_GEAR_RATIO_MILLI] > 60000U) return false;
         left.si_gear_ratio_milli = w[EEPROM_LEFT_GEAR_RATIO_MILLI];
@@ -5089,6 +5112,17 @@ bool RuntimeSettings_Load(void)
     right.p_pid_pos_min = pos_right.position_min;
     right.p_pid_pos_max = pos_right.position_max;
     right.p_pid_deadband_ticks = pos_right.deadband_ticks;
+    if (current_version) {
+        left.l_current_max = (int16_t)w[EEPROM_LEFT_CURRENT_MAX];
+        left.l_current_min = (int16_t)w[EEPROM_LEFT_CURRENT_MIN];
+        right.l_current_max = (int16_t)w[EEPROM_RIGHT_CURRENT_MAX];
+        right.l_current_min = (int16_t)w[EEPROM_RIGHT_CURRENT_MIN];
+        if (left.l_current_max <= 0 || left.l_current_max > 12000 ||
+            left.l_current_min >= 0 || left.l_current_min < -12000 ||
+            right.l_current_max <= 0 || right.l_current_max > 12000 ||
+            right.l_current_min >= 0 || right.l_current_min < -12000) return false;
+    }
+
     mc_foc_conf_prepare(&left);
     mc_foc_conf_prepare(&right);
 

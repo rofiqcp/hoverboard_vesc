@@ -207,7 +207,7 @@
 #define PAGE_FULL             ((uint8_t)0x80)
 
 /* Variables' number */
-#define NB_OF_VAR             ((uint8_t)158U)        /* v17/V19: + encoder ratio + steering 0..360 calibration */
+#define NB_OF_VAR             ((uint8_t)162U)        /* v19: + per-motor max/min VESC current limits */
 
 /* Exported types ------------------------------------------------------------*/
 /* Exported macro ------------------------------------------------------------*/

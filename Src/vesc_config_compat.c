@@ -284,7 +284,9 @@ int32_t VescConfig_SerializeMc(uint8_t *b, bool right, bool defaults) {
     /* VESC si_motor_poles is TOTAL magnetic poles. Stock hoverboard has
      * 15 pole-pairs, therefore VESC Tool must show 30 motor poles. */
     b[i++] = (uint8_t)(c->foc_motor_pole_pairs * 2U);
-    append_auto(b, (float)c->si_gear_ratio_milli / 1000.0f, &i);
+    /* Canonical VESC default for a legacy zero/uninitialized ratio is direct drive 1.0. */
+    const uint16_t gear_ratio_milli = c->si_gear_ratio_milli != 0U ? c->si_gear_ratio_milli : 1000U;
+    append_auto(b, (float)gear_ratio_milli / 1000.0f, &i);
     append_auto(b, 0.1f, &i);
     b[i++] = 0U;
     b[i++] = 10U;

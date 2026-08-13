@@ -15,7 +15,7 @@ checks = {
     # ARM is evaluated independently for each motor, not behind a both-motors-ready gate.
     'arm_left_then_right': 'try_arm_motor(true, now);\n    try_arm_motor(false, now);' in runtime,
     'side_local_bit': 'const uint8_t bit = left ? 0x01U : 0x02U;' in runtime,
-    'side_local_feedback': 'prearm_feedback_not_ready(mode, requested_target, cfg, sample, encoder_aligned)' in runtime and '(mode == ESC_MODE_DUTY && target == 0)' in runtime,
+    'side_local_feedback': 'prearm_feedback_not_ready(mode, requested_target, cfg, sample, encoder_aligned)' in runtime and '(mode == ESC_MODE_DUTY && target == 0)' not in runtime and 'mode == ESC_MODE_OPEN || mode == ESC_MODE_HANDBRAKE' in runtime,
     # Successful Detect commits the calibrated proof into active RAM and resets health.
     'encoder_cal_commit': 'candidate_config.encoder_calibrated = 1U;' in runtime,
     'hall_cal_commit': 'candidate_config.hall_calibrated = 1U;' in runtime,

@@ -191,7 +191,7 @@ assert 'MotorControl_GetDcTelemetryRejects' in protocol
 # back-to-back GET_VALUES hold must expire instead of becoming stuck forever.
 assert 'MotorControl_BridgeActive(left)' in protocol
 assert 'current_avg_reset(a, true);' in protocol
-assert 'VESC_CURRENT_HOLD_MAX_MS 100U' in protocol
+assert 'VESC_CURRENT_HOLD_MAX_MS 25U' in protocol
 assert 'last_valid_ms' in protocol
 assert 'passive_l1_limit' not in protocol
 assert 'passive_rejects' in protocol

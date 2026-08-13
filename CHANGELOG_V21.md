@@ -36,3 +36,11 @@ Run the V21 full tester on real hardware. In particular, a LEFT encoder detect t
 - Full Brake bypasses sensor-angle readiness because the hardware short does not use rotor phase. Normal Duty/Current/RPM/Position/Current-Brake still require the selected side's valid feedback proof.
 - Added explicit LEFT/RIGHT Full-Brake→Stop hardware tests and regression contracts while preserving 16-kHz dual-sensor sampling and 8-kHz-per-motor interleaved FOC.
 - CURRENT_BRAKE inside the existing ±2 mechanical RPM deadband now uses the same all-low-side hardware short, matching VESC low-speed short semantics and preventing Hall sign chatter/freewheel at standstill.
+
+## Hardware log 2026-08-13 19:23 corrections
+- Restored `Src/motor.c` byte-for-byte from V20: ADC DMA stays 16 kHz, both sensors sample at 16 kHz and LEFT/RIGHT FOC remains 8 kHz interleaved; V21 brake logic no longer adds work to the hot ISR.
+- Restored V20 current/Id/Iq/Vd/Vq averaging-validity timing for standard `COMM_GET_VALUES` telemetry.
+- `COMM_SET_DETECT` Rotor Position streaming is independent per virtual controller; selecting one node no longer clears the peer display mode.
+- Fixed position PID saturation (`p_limited` is now the term actually summed), added conservative defaults, and capped Hall-position output to 1 A in the slow loop to prevent the 19:23 RIGHT +/-6.5k-eRPM hunting.
+- Removed unconditional V21 low-side Full-Brake/current-brake shortcuts; `SET_DUTY(0)` returns to normal VESC zero-modulation FOC, while dynamic current brake opposes measured speed.
+- VESC motor current max/min are now independently editable inside the stock board +/-15 A safety limit and persisted independently for LEFT/RIGHT in EEPROM v19.

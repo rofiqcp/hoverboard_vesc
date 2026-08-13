@@ -45,12 +45,12 @@ int main(void) {
     mc_foc_run_current_control(&m, &s, &out, 2000U);
     assert(out.iq_target == 400);
 
-    /* At exact zero our fixed-point SIGN(0) convention matches the VESC brake
-     * expression by selecting negative Iq, while current remains magnitude-limited. */
+    /* VESC dynamic brake follows -SIGN(speed)*|Iq|. At exact zero speed
+     * SIGN(0)=0, so dynamic brake current is zero; HANDBRAKE is the static hold. */
     m.m_iq_set = 400;
     s = sample_for_speed(0, true);
     mc_foc_run_current_control(&m, &s, &out, 2000U);
-    assert(out.iq_target == -400);
+    assert(out.iq_target == 0);
 
     /* Handbrake is not current-brake. It is a fixed phase-0 current vector and
      * therefore does not require closed-loop Hall/encoder phase to energize. */

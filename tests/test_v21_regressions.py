@@ -31,14 +31,16 @@ def test_full_brake_and_stop_are_not_aliased():
     assert "SET_DUTY(0) is VESC Tool Full Brake" in p
     assert "const bool run=true" in p
 
-def test_brake_zero_speed_deadband_present():
+def test_brake_uses_standard_speed_opposition_without_v21_deadband():
     f = src("Src/foc_motor.c")
-    assert "speed_q4 > -32 && speed_q4 < 32" in f
+    assert "speed_q4 > -32 && speed_q4 < 32" not in f
+    assert "if (speed_q4 < 0) iq_target = mag;" in f
+    assert "else if (speed_q4 > 0) iq_target = (int16_t)-mag;" in f
 
-def test_realtime_steady_sample_not_cleared_on_one_invalid_window():
+def test_realtime_current_validity_uses_proven_v20_window():
     p = src("Src/vesc_protocol.c")
-    assert "VESC_CURRENT_HOLD_MAX_MS 100U" in p
-    assert "temporarily unavailable" in p
+    assert "VESC_CURRENT_HOLD_MAX_MS 25U" in p
+    assert "MotorControl_CurrentMeasurementValid(left)" in p
 
 def test_vdq_uses_live_vbus_scaling():
     p = src("Src/vesc_protocol.c")

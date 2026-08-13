@@ -132,12 +132,12 @@ void mc_foc_conf_set_defaults(mc_configuration *conf,
     conf->s_pid_ramp_erpms_s = 0;
     conf->s_pid_allow_braking = true;
 
-    conf->p_pid_kp_q16 = 16384;
+    conf->p_pid_kp_q16 = 1024;        /* 0.015625: safe coarse-Hall default */
     conf->p_pid_ki_q16 = 0;
     conf->p_pid_kd_q16 = 0;
     conf->p_pid_kd_proc_q16 = 0;
     conf->p_pid_kd_filter_q15 = 6553U;       /* 0.20 */
-    conf->p_pid_gain_dec_ticks = 0U;
+    conf->p_pid_gain_dec_ticks = 8U;       /* taper near target; ~32 deg on 15-pp Hall */
     conf->p_pid_pos_min = -1000000;
     conf->p_pid_pos_max = 1000000;
     conf->p_pid_deadband_ticks = 2U;
@@ -163,7 +163,9 @@ void mc_foc_conf_prepare(mc_configuration *conf)
 {
     if (conf == NULL) return;
     if (conf->l_current_max < 1) conf->l_current_max = 1;
-    conf->l_current_min = (int16_t)-conf->l_current_max;
+    if (conf->l_current_max > 12000) conf->l_current_max = 12000; /* 15 A board limit */
+    if (conf->l_current_min >= 0) conf->l_current_min = -1;
+    if (conf->l_current_min < -12000) conf->l_current_min = -12000;
     if (conf->l_max_voltage < 1) conf->l_max_voltage = 1;
     if (conf->foc_motor_pole_pairs == 0U) conf->foc_motor_pole_pairs = 1U;
     if (conf->si_gear_ratio_milli == 0U || conf->si_gear_ratio_milli > 60000U)
@@ -482,7 +484,7 @@ int16_t mc_foc_run_pid_control_pos(motor_all_state_t *motor, uint32_t dt_ms)
     const int32_t i_limit = 65536 - abs_s32_sat(p_limited);
     pid->integrator_q16 = clamp_s32(pid->integrator_q16, -i_limit, i_limit);
 
-    const int32_t output_q16 = clamp_s32((int64_t)p_q16 + pid->integrator_q16 +
+    const int32_t output_q16 = clamp_s32((int64_t)p_limited + pid->integrator_q16 +
         pid->derivative_filter_q16 + pid->process_derivative_filter_q16, -65536, 65536);
     pid->previous_error = error;
     pid->previous_process = motor->m_position_ticks;
@@ -968,12 +970,13 @@ void mc_foc_run_current_control(motor_all_state_t *motor,
      * expression -SIGN(speed)*fabs(iq). */
     if (motor->m_control_mode == CONTROL_MODE_CURRENT_BRAKE) {
         int16_t mag = iq_target < 0 ? (int16_t)-iq_target : iq_target;
-        /* 2 mechanical RPM deadband (Q4=32). Without this, a stationary Hall
-         * estimator toggling +1/-1 RPM reverses brake Iq every control update and
-         * produces the audible/mechanical jitter seen on RIGHT in V20. */
+        /* VESC brake current is a magnitude and the fast loop applies the
+         * opposite sign of measured speed. At exactly zero speed SIGN(0)=0,
+         * therefore dynamic brake current is zero; use HANDBRAKE for static hold. */
         const int16_t speed_q4 = sample->speed_rpm_q4;
-        if (speed_q4 > -32 && speed_q4 < 32) iq_target = 0;
-        else iq_target = speed_q4 < 0 ? mag : (int16_t)-mag;
+        if (speed_q4 < 0) iq_target = mag;
+        else if (speed_q4 > 0) iq_target = (int16_t)-mag;
+        else iq_target = 0;
         id_target = 0;
     }
 

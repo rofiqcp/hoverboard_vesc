@@ -125,6 +125,7 @@ static void test_position_pid_matches_vesc_structure(void) {
     mc_foc_reset_outer_loops(&m);
     c.p_pid_kp_q16 = q16(1.0);
     c.p_pid_ki_q16 = q16(1.0);
+    c.p_pid_gain_dec_ticks = 0U; /* isolate saturation/anti-windup behavior */
     c.p_pid_kd_proc_q16 = 0;
     mc_foc_conf_prepare(&c);
     m.m_position_ticks = 0;

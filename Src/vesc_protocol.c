@@ -169,7 +169,7 @@ typedef struct {
 static vesc_current_avg_t current_avg_left;
 static vesc_current_avg_t current_avg_right;
 
-#define VESC_CURRENT_HOLD_MAX_MS 100U
+#define VESC_CURRENT_HOLD_MAX_MS 25U
 
 static void current_avg_reset(vesc_current_avg_t *a, bool clear_last)
 {
@@ -222,20 +222,14 @@ void VescProtocol_CurrentTelemetrySample(void)
         const bool left = n == 0U;
         const bool bridge_active = MotorControl_BridgeActive(left);
 
-        if (!MotorControl_CurrentOffsetsValid() || !bridge_active) {
-            /* Released bridge must clear immediately so one motor can never leak
-             * stale current/voltage into the other virtual-CAN node. */
+        if (!MotorControl_CurrentOffsetsValid() || !bridge_active ||
+            !MotorControl_CurrentMeasurementValid(left)) {
+            /* Count suppressed passive observations only as a diagnostic. */
             int32_t id_abs = outs[n]->id; if (id_abs < 0) id_abs = -id_abs;
             int32_t iq_abs = outs[n]->iq; if (iq_abs < 0) iq_abs = -iq_abs;
             if ((id_abs + iq_abs) > 0 && a->passive_rejects != UINT16_MAX)
                 ++a->passive_rejects;
             current_avg_reset(a, true);
-            continue;
-        }
-        if (!MotorControl_CurrentMeasurementValid(left)) {
-            /* Low-side current reconstruction can be temporarily unavailable at
-             * a zero vector / sampling boundary. Keep the last accepted steady
-             * sample; current_avg_take applies the bounded 100-ms freshness rule. */
             continue;
         }
 
@@ -271,9 +265,14 @@ static void current_avg_take(bool right, int16_t *id, int16_t *iq, int16_t *dc_c
 
     /* Never publish a stale nonzero standard current after this motor's bridge is
      * released. This is the key cross-side/stuck-current invariant for virtual CAN. */
-    if (!MotorControl_BridgeActive(left) || !MotorControl_CurrentOffsetsValid()) {
+    if (!MotorControl_BridgeActive(left) || !MotorControl_CurrentOffsetsValid() ||
+        !MotorControl_CurrentMeasurementValid(left)) {
         current_avg_reset(a, true);
-        *id = 0; *iq = 0; *dc_centi_amp = 0; *vd_mv = 0; *vq_mv = 0;
+        *id = 0;
+        *iq = 0;
+        *dc_centi_amp = 0;
+        *vd_mv = 0;
+        *vq_mv = 0;
         return;
     }
 
@@ -1376,7 +1375,7 @@ static void process_ctx(const uint8_t*p,uint16_t n,const vesc_motor_ctx_t *ctx){
  case C_SET_HANDBRAKE:if(l>=4){int32_t raw=vesc_buf_get_i32(d,&j);record_set_wire(r,raw);set_handbrake(r,(float)raw/1000.0f);}break;
  case C_SET_RPM:if(l>=4){int32_t raw=vesc_buf_get_i32(d,&j);record_set_wire(r,raw);set_rpm(r,raw);}break;
  case C_SET_POS:if(l>=4){int32_t raw=vesc_buf_get_i32(d,&j);record_set_wire(r,raw);set_pos(r,(float)raw/1000000.0f);}break;
- case C_SET_DETECT:if(l>=1){uint8_t mode=d[0];if(mode>7U)mode=0U;if(r){display_position_mode_right=mode;display_position_last_right_ms=0U;if(mode!=0U)display_position_mode_left=0U;}else{display_position_mode_left=mode;display_position_last_left_ms=0U;if(mode!=0U)display_position_mode_right=0U;}RuntimeControl_VescAlive();}break;
+ case C_SET_DETECT:if(l>=1){uint8_t mode=d[0];if(mode>7U)mode=0U;if(r){display_position_mode_right=mode;display_position_last_right_ms=0U;}else{display_position_mode_left=mode;display_position_last_left_ms=0U;}RuntimeControl_VescAlive();}break;
  case C_DETECT_ENCODER:case C_DETECT_HALL_FOC:start_detect(cmd,d,l,r);break;
  case C_DETECT_APPLY_ALL_FOC:auto_detect_start(r);break;
  case C_TERMINAL_CMD:terminal_command(d,l);break;

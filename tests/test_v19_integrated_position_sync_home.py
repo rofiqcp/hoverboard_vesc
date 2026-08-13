@@ -57,7 +57,7 @@ assert "candidate_config.encoder_ratio = sensorCal.detected_pole_pairs" in runti
 assert "params->foc_motor_pole_pairs = sensorCal.detected_pole_pairs" not in runtime
 
 # EEPROM image owns encoder ratio plus both mechanical calibration records.
-assert "NB_OF_VAR             ((uint8_t)158U)" in eeprom_h
+assert "NB_OF_VAR             ((uint8_t)162U)" in eeprom_h
 assert "EEPROM_LEFT_GEAR_RATIO_MILLI" in runtime
 assert "EEPROM_RIGHT_GEAR_RATIO_MILLI" in runtime
 for token in ("EEPROM_LEFT_ENCODER_RATIO", "EEPROM_RIGHT_ENCODER_RATIO",
@@ -68,8 +68,10 @@ for token in ("EEPROM_LEFT_ENCODER_RATIO", "EEPROM_RIGHT_ENCODER_RATIO",
 # Rotor Position VESC Tool compatibility: COMM_SET_DETECT selects display source;
 # COMM_ROTOR_POSITION is streamed on ~10 ms cadence, only one motor at a time.
 for token in ("C_SET_DETECT=11", "C_ROTOR_POSITION=22", "rotor_position_stream_service",
-              ">=10U", "display_position_mode_left=0U", "display_position_mode_right=0U"):
+              ">=10U", "display_position_mode_left=mode", "display_position_mode_right=mode"):
     assert token in proto
+assert "if(mode!=0U)display_position_mode_left=0U" not in proto
+assert "if(mode!=0U)display_position_mode_right=0U" not in proto
 
 # Integrated board commissioning flow is explicit LEFT encoder -> RIGHT Hall ->
 # LEFT electrical sync -> EEPROM -> terminal reply. It must not be represented as

@@ -152,8 +152,8 @@ CAL_NAMES = {
 }
 CURRENT_CAL_NAMES = {0: "IDLE", 1: "SETTLING", 2: "COLLECTING", 3: "VALID", 4: "FAILED"}
 AUTO_DETECT_STAGE_NAMES = {
-    0: "IDLE", 1: "WAIT_CURRENT_CAL", 2: "LEFT_ENCODER",
-    3: "RIGHT_HALL", 4: "LEFT_SYNC", 5: "REPLY",
+    0: "IDLE", 1: "WAIT_CURRENT_CAL", 2: "RIGHT_HALL",
+    3: "LEFT_ENCODER", 4: "LEFT_SYNC", 5: "REPLY",
 }
 HOMING_STATE_NAMES = {
     0: "IDLE", 1: "SEARCHING", 2: "HOMED", 3: "TIMEOUT", 4: "ABORTED",
@@ -2784,6 +2784,12 @@ class TestSuite:
         pre = self.dev.diag(node, label + "_pre")
         assert pre["calibrated"], f"{node} sensor not calibrated"
         assert pre["internal_error"] == 0, f"{node} blocking error before test: {pre['internal_error_name']}"
+        if kind == "brake":
+            # Upstream CURRENT_BRAKE is direction-dependent. Establish measured
+            # speed first; testing it at standstill incorrectly expects static Iq.
+            spin_erpm = self.args.erpm if self.args.erpm > 0 else 900
+            self._stream_command(node, "rpm", spin_erpm, max(0.55, self.args.motion_duration * 0.65), label + "_prespin")
+            time.sleep(0.05)
         rows = self._stream_command(node, kind, value, self.args.motion_duration, label)
         assert rows, "no samples during command"
 
@@ -2924,9 +2930,10 @@ class TestSuite:
     def full_brake_and_stop_test(self, node: str) -> dict[str, Any]:
         """Verify VESC Tool Full Brake (SET_DUTY 0) versus Stop semantics.
 
-        Full Brake must keep only the selected bridge active at duty zero; Stop is
-        SET_CURRENT(0) and must release that bridge. This test is safe without a
-        calibrated rotor sensor because the full-brake path is a static low-side
+        Full Brake sends SET_DUTY(0); Stop sends SET_CURRENT(0). Upstream FOC may
+        optionally convert equal zero-voltage PWM to a low-side short when
+        foc_short_ls_on_zero_duty is enabled, so this test only requires safe zero
+        modulation with the selected sensored controller active before Stop
         short and never consumes electrical angle.
         """
         assert self.dev
@@ -3067,8 +3074,8 @@ class TestSuite:
                 left_ready = bool(post_left.get("encoder_electrical_ready"))
 
             self.result("14a_rotor_position_stream_modes", self.rotor_position_stream_test,
-                        skip=not (left_ready and right_ready),
-                        skip_reason="both sensor contexts must be commissioned for Rotor Position stream test")
+                        skip=not (left_ready or right_ready),
+                        skip_reason="no commissioned motor available for Rotor Position stream test")
 
             # Hard-stop homing is intentionally opt-in. It physically drives the
             # steering mechanism to both stops, measures the signed span, maps it
@@ -3089,12 +3096,13 @@ class TestSuite:
                         skip=not current_ok,
                         skip_reason="prerequisite current-zero calibration failed")
 
-            # These two are sensor-independent hardware semantics and must run
-            # even when one sensor commissioning path failed.
+            # VESC Tool Full Brake is SET_DUTY(0), but the FOC low-side short is
+            # a configuration option upstream. Test zero-modulation vs Stop only
+            # on a commissioned feedback path; never force an ISR hardware short.
             self.result("14d_left_full_brake_then_stop", lambda: self.full_brake_and_stop_test("local"),
-                        skip=not current_ok, skip_reason="current offsets not ready")
+                        skip=not left_ready, skip_reason="LEFT feedback not commissioned")
             self.result("14e_right_full_brake_then_stop", lambda: self.full_brake_and_stop_test("right"),
-                        skip=not current_ok, skip_reason="current offsets not ready")
+                        skip=not right_ready, skip_reason="RIGHT feedback not commissioned")
 
             tests = [
                 ("15_left_duty_pos", "local", left_ready, lambda: self.motion_test("local", "duty", +self.args.duty, "duty_pos")),
