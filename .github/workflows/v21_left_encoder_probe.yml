@@ -29,6 +29,9 @@ jobs:
               '#define SENSOR_CAL_NATIVE_ENCODER_REVERSE_SWEEPS 3U\n'+anchor,1)
           r=r.replace('SENSOR_CAL_ENCODER_FORWARD_SWEEPS','SENSOR_CAL_NATIVE_ENCODER_FORWARD_SWEEPS')
           r=r.replace('SENSOR_CAL_ENCODER_REVERSE_SWEEPS','SENSOR_CAL_NATIVE_ENCODER_REVERSE_SWEEPS')
+          r=r.replace('''    if (sensor_type == MOTOR_SENSOR_ENCODER_AB && sensorCal.vesc_wire_detect)\n        return SENSOR_CAL_VESC_ENCODER_CYCLES;''',
+                      '''    if (sensor_type == MOTOR_SENSOR_ENCODER_AB && sensorCal.vesc_wire_detect)\n        return SENSOR_CAL_ENCODER_PROBE_MAX_COUNT;''')
+          r=r.replace('    const bool sequence_ready = sensor_cal_finalize_encoder_sequence(&candidate, state);\n','')
           p.write_text(r)
           def rep(path, old, new):
               p=Path(path); s=p.read_text()
