@@ -1,0 +1,55 @@
+name: V21 hardware log 174940 fixes
+
+on:
+  push:
+    branches: [v21]
+    paths:
+      - '.github/workflows/v21_hwlog_174940.yml'
+      - 'tools/apply_v21_hwlog_174940.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v21
+          fetch-depth: 0
+
+      - name: Apply hardware-log fixes
+        run: python3 tools/apply_v21_hwlog_174940.py
+
+      - name: Install validation tools
+        run: python3 -m pip install --disable-pip-version-check pytest platformio
+
+      - name: Regression suite
+        run: python3 -m pytest -q
+
+      - name: Warning-free STM32F103RC build
+        run: |
+          set -o pipefail
+          pio run -e esc 2>&1 | tee /tmp/v21_hwfix_build.log
+          if grep -E '(^|: )[Ww]arning:' /tmp/v21_hwfix_build.log; then
+            echo 'Compiler warning detected; refusing hardware-fix commit.'
+            exit 1
+          fi
+
+      - name: Keep generated artifacts out of release diff
+        run: |
+          rm -rf tests/__pycache__ .pytest_cache
+          git checkout origin/v20 -- .pio || true
+
+      - name: Commit validated source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Src tools/vesc_full_test.py tests CHANGELOG_V21.md
+          if git diff --cached --quiet; then
+            echo 'No validated source changes.'
+          else
+            git commit -m 'V21: fix encoder retry, detect drive and rotor stream test'
+            git push origin HEAD:v21
+          fi
