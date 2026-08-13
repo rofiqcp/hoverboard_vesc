@@ -1,0 +1,43 @@
+name: V21 encoder probe final
+on:
+  push:
+    branches: [v21]
+    paths:
+      - '.github/workflows/v21_encoder_probe_final.yml'
+      - 'tools/migrate_v21_encoder_probe_contracts.py'
+permissions:
+  contents: write
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v21
+          fetch-depth: 0
+      - name: Apply source patch
+        run: python3 tools/apply_v21_left_encoder_probe.py
+      - name: Migrate old contracts
+        run: python3 tools/migrate_v21_encoder_probe_contracts.py
+      - name: Install tools
+        run: python3 -m pip install --disable-pip-version-check pytest platformio
+      - name: Python regressions
+        run: python3 -m pytest -q -W error
+      - name: Host C and protocol tests
+        run: bash tests/run_host_tests.sh
+      - name: STM32F103RC build warning-free
+        run: |
+          set -o pipefail
+          pio run -e esc 2>&1 | tee /tmp/build.log
+          if grep -E '(^|: )[Ww]arning:' /tmp/build.log; then exit 1; fi
+      - name: Commit validated source and permanent tests
+        run: |
+          rm -rf tests/__pycache__ .pytest_cache
+          git checkout origin/v20 -- .pio || true
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Src tools/vesc_full_test.py tests CHANGELOG_V21.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'V21: use VESC shaped bidirectional encoder probes'
+            git push origin HEAD:v21
+          fi
