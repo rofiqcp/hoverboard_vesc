@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/v21_dual_motor_runtime_fix.yml'
       - 'tools/apply_v21_dual_motor_runtime_fix.py'
+      - 'tools/adjust_v14_full_brake_contract.py'
 
 permissions:
   contents: write
@@ -20,7 +21,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply dual-motor runtime patch
-        run: python3 tools/apply_v21_dual_motor_runtime_fix.py
+        run: |
+          python3 tools/apply_v21_dual_motor_runtime_fix.py
+          python3 tools/adjust_v14_full_brake_contract.py
 
       - name: Install validation tools
         run: python3 -m pip install --disable-pip-version-check pytest platformio
