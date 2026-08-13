@@ -19,7 +19,7 @@ tester = (root/'tools/vesc_full_test.py').read_text()
 # reused as A by the hardware-encoder observer/commissioning path.
 assert 'const uint8_t encoder_a = left_v; /* PB6 */' in motor
 assert 'const uint8_t encoder_b = left_w; /* PB7 */' in motor
-assert 'LeftEncoder_GetCount(), encoder_a, encoder_b' in motor
+assert 'LeftEncoder_UpdateAndGetCount(), encoder_a, encoder_b' in motor
 assert 'LeftEncoder_GetCount(), left_u, left_v' not in motor
 
 # 2) V21 keeps TIM4/quadrature health evidence but never turns the already

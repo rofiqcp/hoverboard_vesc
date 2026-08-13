@@ -844,7 +844,7 @@ void DMA1_Channel1_IRQHandler(void)
         const uint8_t encoder_a = left_v; /* PB6 */ /* TIM4_CH1 */
         const uint8_t encoder_b = left_w; /* PB7 */ /* TIM4_CH2 */
         MotorSensor_UpdateHardwareEncoder(&motorConfigLeft, &motorSensorStateLeft,
-                       LeftEncoder_GetCount(), encoder_a, encoder_b,
+                       LeftEncoder_UpdateAndGetCount(), encoder_a, encoder_b,
                        motorConfLeft.foc_motor_pole_pairs, &motorSensorSampleLeft);
     } else {
         MotorSensor_Update(&motorConfigLeft, &motorSensorStateLeft,

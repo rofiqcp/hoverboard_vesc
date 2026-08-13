@@ -320,6 +320,9 @@ typedef struct {
     uint32_t start_tick;
     uint32_t stage_tick;
     int16_t target_current_internal;
+    int16_t phase_q4;
+    int8_t probe_direction;
+    uint8_t probe_attempts;
     int32_t probe_start_count;
     int16_t probe_delta_counts;
     bool direction_proved;
@@ -1925,6 +1928,57 @@ static void encoder_alignment_abort(void)
     refresh_master_enable();
 }
 
+static int16_t encoder_alignment_probe_delta_s16(int32_t delta)
+{
+    if (delta > INT16_MAX) return INT16_MAX;
+    if (delta < INT16_MIN) return INT16_MIN;
+    return (int16_t)delta;
+}
+
+static bool encoder_alignment_probe_matches(const MotorRuntimeConfig *cfg,
+                                            int8_t direction, int32_t delta)
+{
+    if (cfg == NULL || cfg->encoder_cpr < MOTOR_ENCODER_CPR_MIN ||
+        cfg->encoder_ratio == 0U || direction == 0) return false;
+
+    /* 120 electrical degrees = one third electrical revolution. Because the
+     * fast runtime phase uses encoder_ratio, the same physical proof must move
+     * approximately CPR/(3*ratio) normalized TIM4 counts. position_ticks is
+     * already normalized by sensor_inverted in the 16-kHz hardware path. */
+    const uint32_t den = 3U * (uint32_t)cfg->encoder_ratio;
+    uint32_t expected = ((uint32_t)cfg->encoder_cpr + den / 2U) / den;
+    if (expected < 2U) expected = 2U;
+
+    int64_t d = delta;
+    const bool sign_ok = direction > 0 ? d > 0 : d < 0;
+    if (!sign_ok) return false;
+    if (d < 0) d = -d;
+    const uint32_t mag = d > UINT32_MAX ? UINT32_MAX : (uint32_t)d;
+
+    /* Detect already proved the ratio. Startup only verifies that the rotor
+     * follows that electrical field. Allow load/compliance, but reject a tiny
+     * twitch or a count rate incompatible with the persisted ratio. */
+    uint32_t lower = (expected * 55U) / 100U;
+    if (lower < 2U) lower = 2U;
+    const uint32_t upper = (expected * 145U) / 100U + 2U;
+    return mag >= lower && mag <= upper;
+}
+
+static void encoder_alignment_fail(bool left, MotorSensorState *state)
+{
+    if (state != NULL) state->encoder_electrical_aligned = false;
+    if (left) {
+        encoderAlignedLeft = false;
+        armRequestedLeft = false;
+        armRejectLeft = ESC_ARM_REJECT_SENSOR_OR_FOC;
+    } else {
+        encoderAlignedRight = false;
+        armRequestedRight = false;
+        armRejectRight = ESC_ARM_REJECT_SENSOR_OR_FOC;
+    }
+    encoder_alignment_abort();
+}
+
 static void encoder_alignment_start(uint8_t motor)
 {
     fault_report_reset_all();
@@ -1938,6 +1992,9 @@ static void encoder_alignment_start(uint8_t motor)
     encoderAlign.start_tick = RuntimeControl_MonotonicMs();
     encoderAlign.stage_tick = encoderAlign.start_tick;
     encoderAlign.target_current_internal = encoder_alignment_target_current(motor);
+    encoderAlign.phase_q4 = 0;
+    encoderAlign.probe_direction = 1;
+
     int16_t start_current = (int16_t)(encoderAlign.target_current_internal / 2);
     if (start_current < SENSOR_CAL_CURRENT_MIN_INTERNAL)
         start_current = SENSOR_CAL_CURRENT_MIN_INTERNAL;
@@ -1962,47 +2019,153 @@ static bool encoder_alignment_service(uint32_t now)
         (motorControlOvercurrentFaultMask & bit) != 0U ||
         cfg->sensor_type != MOTOR_SENSOR_ENCODER_AB ||
         cfg->encoder_calibrated == 0U || cfg->encoder_sequence_valid == 0U ||
-        cfg->encoder_ratio == 0U) {
-        state->encoder_electrical_aligned = false;
-        if (left) encoderAlignedLeft = false; else encoderAlignedRight = false;
-        encoder_alignment_abort();
+        cfg->encoder_ratio == 0U || !left) {
+        encoder_alignment_fail(left, state);
         return false;
     }
 
-    const uint32_t elapsed = now - encoderAlign.start_tick;
-    int32_t current = encoderAlign.target_current_internal;
-    if (elapsed < 350U) {
-        int32_t start = current / 2;
-        if (start < SENSOR_CAL_CURRENT_MIN_INTERNAL) start = SENSOR_CAL_CURRENT_MIN_INTERNAL;
-        current = start + ((current - start) * (int32_t)elapsed) / 350;
+    /* Stage 0: establish a stable D-axis lock at commanded electrical phase 0.
+     * Current ramps from about 0.5 A to 1.0 A, but phase is not accepted as the
+     * encoder zero yet. A following motion probe must prove the rotor is coupled. */
+    if (encoderAlign.stage == 0U) {
+        const uint32_t elapsed = now - encoderAlign.start_tick;
+        int32_t current = encoderAlign.target_current_internal;
+        if (elapsed < 350U) {
+            int32_t start = current / 2;
+            if (start < SENSOR_CAL_CURRENT_MIN_INTERNAL) start = SENSOR_CAL_CURRENT_MIN_INTERNAL;
+            current = start + ((current - start) * (int32_t)elapsed) / 350;
+        }
+        encoderAlign.phase_q4 = 0;
+        sensor_cal_set_current_override(encoderAlign.motor, true, 0, (int16_t)current);
+        refresh_master_enable();
+        if (elapsed < 700U) return true;
+        encoderAlign.probe_start_count = state->position_ticks;
+        encoderAlign.stage = 1U;
+        encoderAlign.stage_tick = now;
+        return true;
     }
-    sensor_cal_set_current_override(encoderAlign.motor, true, 0, (int16_t)current);
-    refresh_master_enable();
-    if (elapsed < 1100U) return true;
 
-    /* Rotor is held at stator electrical phase 0. Rebuild the incremental runtime
-     * accumulator at the current TIM4 count, then define that physical lock as
-     * electrical 0. Mechanical steering zero is deliberately NOT persisted here;
-     * hard-stop homing owns the 0..360 coordinate. */
+    /* Stage 1: slowly move the forced electrical field by +/-120 degrees.
+     * This is slow-loop only (~200 Hz); ISR cadence/work remains unchanged. */
+    if (encoderAlign.stage == 1U) {
+        uint32_t dt_ms = now - encoderAlign.stage_tick;
+        encoderAlign.stage_tick = now;
+        if (dt_ms == 0U) dt_ms = 1U;
+        if (dt_ms > 50U) dt_ms = 50U;
+        int32_t step = (int32_t)SENSOR_CAL_PHASE_Q4_PER_MS * (int32_t)dt_ms;
+        const int32_t target = encoderAlign.probe_direction > 0
+            ? SENSOR_CAL_ENCODER_PROBE_Q4 : -SENSOR_CAL_ENCODER_PROBE_Q4;
+        int32_t phase = encoderAlign.phase_q4;
+        if (phase < target) {
+            phase += step;
+            if (phase > target) phase = target;
+        } else if (phase > target) {
+            phase -= step;
+            if (phase < target) phase = target;
+        }
+        encoderAlign.phase_q4 = (int16_t)phase;
+        sensor_cal_set_current_override(encoderAlign.motor, true,
+                                        encoderAlign.phase_q4,
+                                        encoderAlign.target_current_internal);
+        refresh_master_enable();
+        if (phase == target) {
+            encoderAlign.stage = 2U;
+            encoderAlign.stage_tick = now;
+        }
+        return true;
+    }
+
+    /* Stage 2: settle at +/-120, then compare normalized TIM4 displacement with
+     * the encoder ratio already proven by COMM_DETECT_ENCODER. */
+    if (encoderAlign.stage == 2U) {
+        sensor_cal_set_current_override(encoderAlign.motor, true,
+                                        encoderAlign.phase_q4,
+                                        encoderAlign.target_current_internal);
+        refresh_master_enable();
+        if ((now - encoderAlign.stage_tick) < SENSOR_CAL_ENCODER_PROBE_SETTLE_MS) return true;
+
+        const int32_t delta = state->position_ticks - encoderAlign.probe_start_count;
+        encoderAlign.probe_delta_counts = encoder_alignment_probe_delta_s16(delta);
+        ++encoderAlign.probe_attempts;
+        encoderAlign.direction_proved = encoder_alignment_probe_matches(
+            cfg, encoderAlign.probe_direction, delta);
+        if (!encoderAlign.direction_proved && encoderAlign.probe_attempts < 2U) {
+            /* Positive probe can be blocked when steering already sits on that
+             * mechanical stop. Return to phase 0 and retry the opposite direction. */
+            encoderAlign.probe_direction = -1;
+            encoderAlign.direction_changed = true;
+        }
+        encoderAlign.stage = 3U;
+        encoderAlign.stage_tick = now;
+        return true;
+    }
+
+    /* Stage 3: always return the stator field to exact electrical phase 0 before
+     * either trying the opposite probe or committing the runtime zero. */
+    if (encoderAlign.stage == 3U) {
+        uint32_t dt_ms = now - encoderAlign.stage_tick;
+        encoderAlign.stage_tick = now;
+        if (dt_ms == 0U) dt_ms = 1U;
+        if (dt_ms > 50U) dt_ms = 50U;
+        int32_t step = (int32_t)SENSOR_CAL_PHASE_Q4_PER_MS * (int32_t)dt_ms;
+        int32_t phase = encoderAlign.phase_q4;
+        if (phase > 0) {
+            phase -= step;
+            if (phase < 0) phase = 0;
+        } else if (phase < 0) {
+            phase += step;
+            if (phase > 0) phase = 0;
+        }
+        encoderAlign.phase_q4 = (int16_t)phase;
+        sensor_cal_set_current_override(encoderAlign.motor, true,
+                                        encoderAlign.phase_q4,
+                                        encoderAlign.target_current_internal);
+        refresh_master_enable();
+        if (phase != 0) return true;
+
+        if (encoderAlign.direction_proved) {
+            encoderAlign.stage = 4U;
+            encoderAlign.stage_tick = now;
+            return true;
+        }
+        if (encoderAlign.probe_attempts < 2U) {
+            encoderAlign.probe_start_count = state->position_ticks;
+            encoderAlign.stage = 1U;
+            encoderAlign.stage_tick = now;
+            return true;
+        }
+
+        /* Neither direction produced the expected count/ratio relationship.
+         * Never run DUTY/CURRENT/RPM/POS with a guessed electrical zero. */
+        encoder_alignment_fail(left, state);
+        return false;
+    }
+
+    /* Stage 4: phase is proven and back at zero. Hold briefly, then rebuild the
+     * incremental phase accumulator at the current TIM4 ISR-owned snapshot and
+     * define THIS boot's electrical zero. Nothing electrical is persisted. */
+    sensor_cal_set_current_override(encoderAlign.motor, true, 0,
+                                    encoderAlign.target_current_internal);
+    refresh_master_enable();
+    if ((now - encoderAlign.stage_tick) < 350U) return true;
+
     const uint32_t primask = __get_PRIMASK();
     __disable_irq();
     MotorSensor_Reset(state);
     MotorSensor_PrepareRuntime(cfg, state, conf->foc_motor_pole_pairs);
-    if (left) {
-        const int32_t raw = LeftEncoder_GetCount();
-        state->encoder_hw_last_count = raw;
-        state->encoder_hw_count_initialized = true;
-    }
+    const int32_t raw = LeftEncoder_GetCount(); /* passive ISR-owned snapshot */
+    state->encoder_hw_last_count = raw;
+    state->encoder_hw_count_initialized = true;
     state->position_ticks = 0;
     state->encoder_speed_reference_ticks = 0;
     state->encoder_speed_window_count = 0U;
     state->encoder_speed_q4 = 0;
     state->encoder_speed_initialized = false;
     (void)MotorSensor_SyncEncoderElectricalPhase(state, 0U);
-    if (left) encoderAlignedLeft = true; else encoderAlignedRight = true;
+    encoderAlignedLeft = true;
     if (primask == 0U) __enable_irq();
 
-    position_session_rezero(left);
+    position_session_rezero(true);
     sensor_cal_set_current_override(encoderAlign.motor, false, 0, 0);
     encoderAlign.active = false;
     refresh_master_enable();

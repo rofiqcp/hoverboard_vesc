@@ -5,6 +5,9 @@
 void LeftEncoder_Init(void);
 void LeftEncoder_SetMode(bool encoder_mode);
 bool LeftEncoder_IsEnabled(void);
+/* Only the 16-kHz current-DMA ISR may advance the TIM4 software accumulator. */
+int32_t LeftEncoder_UpdateAndGetCount(void);
+/* Passive aligned 32-bit snapshot for slow-loop commissioning/diagnostics. */
 int32_t LeftEncoder_GetCount(void);
 void LeftEncoder_ZeroMechanical(void);
 void LeftEncoder_IndexIrq(void);

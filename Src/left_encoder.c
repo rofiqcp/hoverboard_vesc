@@ -21,7 +21,9 @@ static TIM_HandleTypeDef htim4_encoder;
 static volatile bool enabled = false;
 static volatile bool index_seen = false;
 static volatile int32_t index_count = 0;
-static int32_t accumulated = 0;
+static volatile int32_t accumulated = 0;
+/* previous_cnt is intentionally owned only by LeftEncoder_UpdateAndGetCount(),
+ * which is called from the 16-kHz DMA ISR. */
 static uint16_t previous_cnt = 0;
 
 static void pins_hall(void)
@@ -111,7 +113,7 @@ bool LeftEncoder_IsEnabled(void)
     return enabled;
 }
 
-int32_t LeftEncoder_GetCount(void)
+int32_t LeftEncoder_UpdateAndGetCount(void)
 {
     if (!enabled) return accumulated;
 
@@ -126,7 +128,14 @@ int32_t LeftEncoder_GetCount(void)
     } else {
         accumulated += delta;
     }
+    return accumulated;
+}
 
+int32_t LeftEncoder_GetCount(void)
+{
+    /* Cortex-M3 aligned 32-bit read is atomic. Do NOT touch TIM4/previous_cnt
+     * here: slow-loop detect/alignment used to race the 16-kHz ISR and could
+     * duplicate/drop encoder deltas, corrupting the electrical phase proof. */
     return accumulated;
 }
 

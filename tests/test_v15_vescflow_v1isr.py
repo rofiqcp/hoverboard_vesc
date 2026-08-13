@@ -43,7 +43,7 @@ assert 'LEFT_TIM->BDTR |= TIM_BDTR_MOE;' in motor and 'RIGHT_TIM->BDTR |= TIM_BD
 # Encoder pin correction survives the V1 ISR restoration: PB6/PB7 are A/B.
 assert 'const uint8_t encoder_a = left_v; /* PB6 */' in isr
 assert 'const uint8_t encoder_b = left_w; /* PB7 */' in isr
-assert 'LeftEncoder_GetCount(), encoder_a, encoder_b' in isr
+assert 'LeftEncoder_UpdateAndGetCount(), encoder_a, encoder_b' in isr
 
 # 2) Hot-path safety is minimal: stock sample-local DC chop + same-sample feedback.
 assert 'abs_s16_saturated(curL_DC) <= curDC_max' in isr
