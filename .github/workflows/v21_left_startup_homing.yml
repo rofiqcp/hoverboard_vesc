@@ -17,14 +17,21 @@ jobs:
           fetch-depth: 0
       - name: Apply startup and homing patch
         run: python3 tools/apply_v21_left_startup_homing.py
-      - name: Migrate startup alignment contract
+      - name: Migrate startup alignment contracts
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('tests/test_v14_post_detect_arm_contract.py'); s=p.read_text()
-          old="    'encoder_alignment_current': 'sensor_cal_set_current_override(encoderAlign.motor, true, forced_angle_q4,' in runtime,"
-          new="    'encoder_alignment_current': '1.00 A D-axis phase-0 lock' in runtime and 'sensor_cal_set_current_override(encoderAlign.motor, true, 0,' in runtime,"
-          if s.count(old)!=1: raise SystemExit('alignment contract anchor')
+          def rep(path, old, new):
+              p=Path(path); s=p.read_text()
+              if s.count(old)!=1: raise SystemExit(f'{path}: expected one anchor, got {s.count(old)}')
+              p.write_text(s.replace(old,new,1))
+          rep('tests/test_v14_post_detect_arm_contract.py',
+              "    'encoder_alignment_current': 'sensor_cal_set_current_override(encoderAlign.motor, true, forced_angle_q4,' in runtime,",
+              "    'encoder_alignment_current': '1.00 A D-axis phase-0 lock' in runtime and 'sensor_cal_set_current_override(encoderAlign.motor, true, 0,' in runtime,")
+          p=Path('tests/test_v20_left_position_rotor_vdq_protocol.py'); s=p.read_text()
+          old='''assert 'probe_start_count' in runtime and 'probe_delta_counts' in runtime\nassert 'wanted_inverted = encoderAlign.probe_delta_counts < 0 ? 1U : 0U' in runtime\nassert '/* +120 deg electrical */' in runtime\nassert 'encoderAlign.motor == ESC_MOTOR_LEFT && !encoderAlign.direction_proved' in runtime'''
+          new='''# Boot sync must not re-learn direction at a steering hard-stop. Direction/ratio\n# are commissioning proof; boot only performs a current-regulated phase-0 lock.\nassert '1.00 A D-axis phase-0 lock' in runtime\na=runtime.index('static int16_t encoder_alignment_target_current')\nb=runtime.index('static void Homing_SetDefaults', a)\nboot=runtime[a:b]\nassert 'wanted_inverted' not in boot and '+120 deg electrical' not in boot\nassert 'MotorSensor_SyncEncoderElectricalPhase(state, 0U)' in boot'''
+          if s.count(old)!=1: raise SystemExit('v20 startup proof block')
           p.write_text(s.replace(old,new,1))
           PY
       - name: Install tools
