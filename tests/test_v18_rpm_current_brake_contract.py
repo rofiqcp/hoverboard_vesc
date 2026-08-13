@@ -47,7 +47,8 @@ assert 'set_handbrake(r,(float)raw/1000.0f)' in proto
 # 5) Brake sign is chosen in the fast loop every current update and handbrake
 # forces phase zero. Current mode remains signed torque control.
 assert 'motor->m_control_mode == CONTROL_MODE_CURRENT_BRAKE' in foc_c
-assert 'sample->speed_rpm_q4 < 0 ? mag : (int16_t)-mag' in foc_c
+assert 'speed_q4 > -32 && speed_q4 < 32' in foc_c
+assert 'speed_q4 < 0 ? mag : (int16_t)-mag' in foc_c
 assert 'const bool handbrake_mode = motor->m_control_mode == CONTROL_MODE_HANDBRAKE;' in foc_c
 assert '(handbrake_mode ? 0U : sample->phase_q16)' in foc_c
 

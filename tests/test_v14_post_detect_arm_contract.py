@@ -7,7 +7,8 @@ vesc = (root / 'Src/vesc_protocol.c').read_text()
 
 checks = {
     # Every VESC non-zero SET is routed into a side-local ARM request.
-    'duty_side_arm': 'RuntimeControl_VescSetOne(!r,ESC_MODE_DUTY,normalized,run);' in vesc and 'const bool run=normalized!=0;' in vesc,
+    # V21 follows VESC Tool: SET_DUTY(0) is Full Brake and therefore remains armed.
+    'duty_side_arm': 'RuntimeControl_VescSetOne(!r,ESC_MODE_DUTY,normalized,run);' in vesc and 'const bool run=true;' in vesc,
     'current_side_arm': 'RuntimeControl_VescSetOne(!r,ESC_MODE_TRQ,v,run);' in vesc and 'const bool run=v!=0;' in vesc,
     'rpm_side_arm': 'RuntimeControl_VescSetOne(!r,ESC_MODE_SPD,v,run);' in vesc and 'const bool run = e != 0;' in vesc,
     'pos_side_arm': 'RuntimeControl_VescSetOne(!r,ESC_MODE_POS,ticks,true);' in vesc,

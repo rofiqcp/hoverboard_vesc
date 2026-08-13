@@ -57,7 +57,9 @@ assert "candidate_config.encoder_ratio = sensorCal.detected_pole_pairs" in runti
 assert "params->foc_motor_pole_pairs = sensorCal.detected_pole_pairs" not in runtime
 
 # EEPROM image owns encoder ratio plus both mechanical calibration records.
-assert "NB_OF_VAR             ((uint8_t)156U)" in eeprom_h
+assert "NB_OF_VAR             ((uint8_t)158U)" in eeprom_h
+assert "EEPROM_LEFT_GEAR_RATIO_MILLI" in runtime
+assert "EEPROM_RIGHT_GEAR_RATIO_MILLI" in runtime
 for token in ("EEPROM_LEFT_ENCODER_RATIO", "EEPROM_RIGHT_ENCODER_RATIO",
               "EEPROM_LEFT_STEER_ZERO_LO", "EEPROM_LEFT_STEER_SPAN_LO",
               "EEPROM_RIGHT_STEER_ZERO_LO", "EEPROM_RIGHT_STEER_SPAN_LO"):

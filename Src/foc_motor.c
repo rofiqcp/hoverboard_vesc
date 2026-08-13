@@ -154,6 +154,7 @@ void mc_foc_conf_set_defaults(mc_configuration *conf,
     conf->foc_fw_backoff_q15 = 0U;
 
     conf->foc_motor_pole_pairs = 15U;
+    conf->si_gear_ratio_milli = 1000U;
     conf->foc_current_sample_mode = current_sample_mode;
     mc_foc_conf_prepare(conf);
 }
@@ -165,6 +166,8 @@ void mc_foc_conf_prepare(mc_configuration *conf)
     conf->l_current_min = (int16_t)-conf->l_current_max;
     if (conf->l_max_voltage < 1) conf->l_max_voltage = 1;
     if (conf->foc_motor_pole_pairs == 0U) conf->foc_motor_pole_pairs = 1U;
+    if (conf->si_gear_ratio_milli == 0U || conf->si_gear_ratio_milli > 60000U)
+        conf->si_gear_ratio_milli = 1000U;
     /* Physical current gain of the stock board. Do not let GUI/EEPROM mutate it. */
     conf->foc_current_units_per_amp = CONTROL_CURRENT_INTERNAL_PER_A;
 
@@ -965,7 +968,12 @@ void mc_foc_run_current_control(motor_all_state_t *motor,
      * expression -SIGN(speed)*fabs(iq). */
     if (motor->m_control_mode == CONTROL_MODE_CURRENT_BRAKE) {
         int16_t mag = iq_target < 0 ? (int16_t)-iq_target : iq_target;
-        iq_target = sample->speed_rpm_q4 < 0 ? mag : (int16_t)-mag;
+        /* 2 mechanical RPM deadband (Q4=32). Without this, a stationary Hall
+         * estimator toggling +1/-1 RPM reverses brake Iq every control update and
+         * produces the audible/mechanical jitter seen on RIGHT in V20. */
+        const int16_t speed_q4 = sample->speed_rpm_q4;
+        if (speed_q4 > -32 && speed_q4 < 32) iq_target = 0;
+        else iq_target = speed_q4 < 0 ? mag : (int16_t)-mag;
         id_target = 0;
     }
 

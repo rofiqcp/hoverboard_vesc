@@ -160,6 +160,11 @@ int main(void)
         if (dc_sum < INT16_MIN) dc_sum = INT16_MIN;
         dc_curr = (int16_t)dc_sum;
 
+        /* V21: Vd/Vq are reconstructed from modulation and live DC bus. Update
+         * the bus engineering value before taking the telemetry sample so the
+         * voltage axes track the same battery reading shown by GET_VALUES. */
+        batVoltageCalib = batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC;
+
         /* Match VESC GET_VALUES semantics: accumulate read-reset current averages
          * in background. Instantaneous samples remain available through HBTS. */
         VescProtocol_CurrentTelemetrySample();
@@ -174,7 +179,7 @@ int main(void)
         board_temp_deci_c = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) *
                            (board_temp_adc_filt - TEMP_CAL_LOW_ADC) /
                            (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
-        batVoltageCalib = batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC;
+        /* batVoltageCalib already updated before VESC telemetry above. */
 
         // poweroffPressCheck();
 

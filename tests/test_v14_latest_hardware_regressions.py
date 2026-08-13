@@ -26,15 +26,13 @@ assert 'MotorRuntimeConfig_SetHallSequence(cfg, sequence)' in runtime
 assert 'sensorCal.measured_hall_table_valid = true;' in runtime
 assert 'memcpy(snap->result.hall_table, sensorCal.measured_hall_table, 8U);' in runtime
 
-# 2) Latest LEFT log proved all-four-state clean quadrature with 208 valid/0
-# invalid edges but near-zero net displacement. Guarded configured-ratio fallback
-# must not require net displacement and must preserve configured direction.
-fb=runtime[runtime.index('V14 hardware-log 00:23:19'):runtime.index('return false;', runtime.index('V14 hardware-log 00:23:19'))+20]
-assert 'valid_edges >= 32U' in fb
-assert 'sensorCal.encoder_session_seen_mask == 0x0FU' in fb
-assert 'mag >=' not in fb
-assert 'sensorCal.detected_encoder_inverted = sensorCal.original_sensor_inverted;' in fb
-assert 'sensorCal.encoder_ratio_fallback_used = true;' in fb
+# 2) Latest LEFT log proved all-four-state clean quadrature with many valid/0
+# invalid edges but near-zero net displacement. V21 correctly treats that only as
+# sensor-health evidence; it must not fabricate configured pole-pairs as measured ratio.
+assert 'does NOT prove encoder ratio/pole-pairs' in runtime
+assert 'configured_pp' not in runtime
+assert 'sensorCal.encoder_ratio_fallback_used = false;' in runtime
+assert 'sensor_cal_measured_encoder_offset_deg' in runtime
 
 # 3) Power-on BATTERY_LEVEL1 transient is qualified instead of disabling genuine
 # low-battery warning. Settled low voltage must remain low for 500 ms after a 2 s

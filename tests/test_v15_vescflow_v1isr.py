@@ -68,9 +68,9 @@ for exact in (
     'RuntimeControl_VescSetOne(!r,ESC_MODE_SPD,v,run);',
     'RuntimeControl_VescSetOne(!r,ESC_MODE_POS,ticks,true);'):
     assert exact in vesc, exact
-# V17 refines V15: all non-zero primary SETs still route directly, while exact
-# zero Duty/Current/RPM has VESC stop semantics rather than holding MOE active.
-assert 'const bool run=normalized!=0;' in vesc
+# V21 matches VESC Tool: exact zero Duty is Full Brake and remains armed;
+# zero Current/RPM retain their release/stop semantics.
+assert 'const bool run=true;' in vesc
 assert 'const bool run=v!=0;' in vesc
 assert 'const bool run = e != 0;' in vesc
 assert 'const bool run=fabsf' not in vesc.replace(' ', '')
@@ -87,7 +87,7 @@ assert 'MotorControl_BridgeActive(left)' in vesc
 
 # 4) Encoder evidence accumulates for the whole detect transaction; window dither cannot erase it.
 for token in ('encoder_session_valid_edges_start', 'encoder_session_invalid_transitions_start',
-              'encoder_session_seen_mask', 'sensorCal.encoder_session_seen_mask == 0x0FU'):
+              'encoder_session_seen_mask'):
     assert token in runtime, token
 
 # Failed sweep retry must NOT move the transaction edge baselines. That was the

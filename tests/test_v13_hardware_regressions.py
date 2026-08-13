@@ -22,12 +22,13 @@ assert 'const uint8_t encoder_b = left_w; /* PB7 */' in motor
 assert 'LeftEncoder_GetCount(), encoder_a, encoder_b' in motor
 assert 'LeftEncoder_GetCount(), left_u, left_v' not in motor
 
-# 2) Loaded-wheel encoder fallback: first prefer strict ratio, then allow the
-# configured pole-pair value only with clean TIM4 + all-four-state evidence.
-for token in ('encoder_ratio_fallback_used', 'configured_pp',
-              'valid_edges >= 32U', 'invalid_edges <= invalid_limit',
-              'sensorCal.encoder_session_seen_mask == 0x0FU'):
-    assert token in runtime, f'missing encoder fallback guard: {token}'
+# 2) V21 keeps TIM4/quadrature health evidence but never turns the already
+# configured pole-pair into a fake measured encoder ratio. Ratio must come from
+# commanded electrical motion versus measured A/B motion.
+assert 'encoder_ratio_fallback_used' in runtime
+assert 'does NOT prove encoder ratio/pole-pairs' in runtime
+assert 'configured_pp' not in runtime
+assert 'sensorCal.encoder_ratio_fallback_used = false;' in runtime
 assert 'VescDetectTerminalSnapshot vescDetectTerminal[2]' in runtime
 assert 'RuntimeControl_VescGetLastSensorDetect' in runtime
 

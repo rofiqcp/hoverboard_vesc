@@ -230,6 +230,9 @@ typedef struct {
     int16_t drive_current_internal;
     int16_t phase_q4;
     int32_t encoder_start;
+    /* Raw TIM4 count while rotor is locked at commanded electrical phase 0.
+     * Used only to report the measured VESC encoder offset for this calibration. */
+    int32_t encoder_zero_raw_count;
     int32_t encoder_delta;
     uint32_t encoder_valid_edges_start;
     uint32_t encoder_invalid_transitions_start;
@@ -442,10 +445,11 @@ static void set_arm_reject(bool left, uint8_t reason)
 
 /* EEPROM emulation memerlukan tabel seluruh virtual address yang ikut page transfer. */
 uint16_t VirtAddVarTab[NB_OF_VAR] = {
-    2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026,2027,2028,2029,2030,2031,2032,2033,2034,2035,2036,2037,2038,2039,2040,2041,2042,2043,2044,2045,2046,2047,2048,2049,2050,2051,2052,2053,2054,2055,2056,2057,2058,2059,2060,2061,2062,2063,2064,2065,2066,2067,2068,2069,2070,2071,2072,2073,2074,2075,2076,2077,2078,2079,2080,2081,2082,2083,2084,2085,2086,2087,2088,2089,2090,2091,2092,2093,2094,2095,2096,2097,2098,2099,2100,2101,2102,2103,2104,2105,2106,2107,2108,2109,2110,2111,2112,2113,2114,2115,2116,2117,2118,2119,2120,2121,2122,2123,2124,2125,2126,2127,2128,2129,2130,2131,2132,2133,2134,2135,2136,2137,2138,2139,2140,2141,2142,2143,2144,2145,2146,2147,2148,2149,2150,2151,2152,2153,2154,2155
+    2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026,2027,2028,2029,2030,2031,2032,2033,2034,2035,2036,2037,2038,2039,2040,2041,2042,2043,2044,2045,2046,2047,2048,2049,2050,2051,2052,2053,2054,2055,2056,2057,2058,2059,2060,2061,2062,2063,2064,2065,2066,2067,2068,2069,2070,2071,2072,2073,2074,2075,2076,2077,2078,2079,2080,2081,2082,2083,2084,2085,2086,2087,2088,2089,2090,2091,2092,2093,2094,2095,2096,2097,2098,2099,2100,2101,2102,2103,2104,2105,2106,2107,2108,2109,2110,2111,2112,2113,2114,2115,2116,2117,2118,2119,2120,2121,2122,2123,2124,2125,2126,2127,2128,2129,2130,2131,2132,2133,2134,2135,2136,2137,2138,2139,2140,2141,2142,2143,2144,2145,2146,2147,2148,2149,2150,2151,2152,2153,2154,2155,2156,2157
 };
 
-#define EEPROM_CONFIG_VERSION 17U
+#define EEPROM_CONFIG_VERSION 18U
+#define EEPROM_CONFIG_VERSION_V17 17U
 #define EEPROM_CONFIG_VERSION_V16 16U
 #define EEPROM_CONFIG_VERSION_V15 15U
 #define EEPROM_CONFIG_VERSION_V14 14U
@@ -533,6 +537,8 @@ uint16_t VirtAddVarTab[NB_OF_VAR] = {
 #define EEPROM_RIGHT_STEER_SPAN_LO           153U
 #define EEPROM_RIGHT_STEER_SPAN_HI           154U
 #define EEPROM_RIGHT_STEER_CAL                155U
+#define EEPROM_LEFT_GEAR_RATIO_MILLI          156U
+#define EEPROM_RIGHT_GEAR_RATIO_MILLI         157U
 
 static int32_t clamp_i32(int32_t value, int32_t lower, int32_t upper)
 {
@@ -740,32 +746,12 @@ static bool sensor_cal_auto_candidate_ready(MotorRuntimeConfig *cfg,
             }
         }
 
-        /* V14 hardware-log 00:23:19 proves the A/B source is physically healthy
-         * even though a 0.50-A loaded wheel dithers and returns to essentially the
-         * same mechanical count: all four A/B states were seen, TIM4 accumulated
-         * 208 valid edges, and invalid transitions stayed at zero. Net displacement
-         * is therefore NOT a valid health criterion for this case.
-         *
-         * VESC upstream can infer ratio only when the rotor follows its commanded
-         * +/-120-degree electrical steps. When it does not, do not fabricate a
-         * measured ratio. Instead accept the already configured motor pole-pair
-         * ratio only after a strong quadrature integrity proof and preserve the
-         * configured encoder direction. HBTS/terminal snapshot marks this path as
-         * encoder_ratio_fallback_used so the result remains auditable. */
-        const uint32_t valid_edges = state->encoder_valid_edges - sensorCal.encoder_session_valid_edges_start;
-        const uint32_t invalid_edges = state->encoder_invalid_transitions -
-            sensorCal.encoder_session_invalid_transitions_start;
-        const uint32_t invalid_limit = 2U + (valid_edges / 32U);
-        const uint8_t configured_pp = sensor_cal_params(sensorCal.motor)->foc_motor_pole_pairs;
-        if (configured_pp >= 1U && configured_pp <= SENSOR_CAL_VESC_POLE_PAIRS_MAX &&
-            valid_edges >= 32U && invalid_edges <= invalid_limit &&
-            sensorCal.encoder_session_seen_mask == 0x0FU && sequence_ready) {
-            sensorCal.detected_pole_pairs = configured_pp;
-            if (!sensorCal.encoder_direction_proved)
-                sensorCal.detected_encoder_inverted = sensorCal.original_sensor_inverted;
-            sensorCal.encoder_ratio_fallback_used = true;
-            return true;
-        }
+        /* V21: strong quadrature evidence proves only that A/B is healthy. It
+         * does NOT prove encoder ratio/pole-pairs. Upstream VESC returns a ratio
+         * only from commanded electrical motion versus measured encoder motion.
+         * If strict inference above cannot prove it, keep sweeping until timeout
+         * and fail rather than fabricating the configured pole-pair value. */
+        sensorCal.encoder_ratio_fallback_used = false;
         return false;
     }
 
@@ -1099,6 +1085,23 @@ static bool sensor_cal_finalize_encoder_sequence(MotorRuntimeConfig *cfg, MotorS
     return true;
 }
 
+static uint16_t sensor_cal_measured_encoder_offset_deg(const MotorRuntimeConfig *cfg,
+                                                        uint8_t ratio,
+                                                        uint8_t inverted)
+{
+    if (cfg == NULL || cfg->encoder_cpr < MOTOR_ENCODER_CPR_MIN || ratio == 0U)
+        return 0U;
+    int64_t count = sensorCal.encoder_zero_raw_count;
+    const int64_t cpr = cfg->encoder_cpr;
+    count %= cpr;
+    if (count < 0) count += cpr;
+    if (inverted && count != 0) count = cpr - count;
+    /* VESC encoder equation is theta_e = theta_m*ratio - offset. At the D-axis
+     * lock theta_e=0, so offset is the measured encoder electrical phase. */
+    const uint64_t num = (uint64_t)count * (uint64_t)ratio * 360ULL;
+    return (uint16_t)(((num + (uint64_t)cpr / 2ULL) / (uint64_t)cpr) % 360ULL);
+}
+
 static void sensor_cal_finish(uint8_t terminal_state, uint8_t result_code)
 {
     MotorRuntimeConfig *cfg = sensor_cal_config(sensorCal.motor);
@@ -1148,8 +1151,10 @@ static void sensor_cal_finish(uint8_t terminal_state, uint8_t result_code)
                         sensorCal.detected_pole_pairs >= 1U &&
                         sensorCal.detected_pole_pairs <= SENSOR_CAL_VESC_POLE_PAIRS_MAX) {
                         candidate_config.sensor_inverted = sensorCal.detected_encoder_inverted;
-                        candidate_config.encoder_offset_deg = 0U;
                         candidate_config.encoder_ratio = sensorCal.detected_pole_pairs;
+                        candidate_config.encoder_offset_deg =
+                            sensor_cal_measured_encoder_offset_deg(&candidate_config,
+                                sensorCal.detected_pole_pairs, sensorCal.detected_encoder_inverted);
                         candidate_config.encoder_calibrated = 1U;
                         success = true;
                         apply_candidate = true;
@@ -1566,6 +1571,7 @@ static void sensor_cal_service(uint32_t now, uint32_t dt_ms)
              * count saat rotor terkunci pada electrical phase 0 sebagai referensi
              * theta_e terpisah; posisi tetap kontinu untuk POS/odometry/homing. */
             (void)MotorSensor_SyncEncoderElectricalPhase(state, 0U);
+            sensorCal.encoder_zero_raw_count = LeftEncoder_GetCount();
             sensorCal.encoder_start = state->position_ticks;
             state->encoder_speed_reference_ticks = state->position_ticks;
             state->encoder_speed_window_count = 0U;
@@ -4728,6 +4734,8 @@ bool RuntimeSettings_Save(void)
     put_i32(w, EEPROM_RIGHT_STEER_ZERO_LO, steeringCalibrationRight.right_zero_ticks);
     put_i32(w, EEPROM_RIGHT_STEER_SPAN_LO, steeringCalibrationRight.span_ticks);
     w[EEPROM_RIGHT_STEER_CAL] = steeringCalibrationRight.calibrated ? 1U : 0U;
+    w[EEPROM_LEFT_GEAR_RATIO_MILLI] = motorConfLeft.si_gear_ratio_milli;
+    w[EEPROM_RIGHT_GEAR_RATIO_MILLI] = motorConfRight.si_gear_ratio_milli;
     w[EEPROM_WORD_GENERATION] = (uint16_t)(eepromGeneration + 1U);
     if (w[EEPROM_WORD_GENERATION] == 0U) w[EEPROM_WORD_GENERATION] = 1U;
     w[EEPROM_WORD_CRC] = eeprom_crc_current_image(w);
@@ -4855,12 +4863,13 @@ bool RuntimeSettings_Load(void)
     const bool version_v11 = (version == EEPROM_CONFIG_VERSION_V11);
     const bool version_v12 = (version == EEPROM_CONFIG_VERSION_V12);
     const bool version_v13 = (version == EEPROM_CONFIG_VERSION_V13);
+    const bool version_v17 = (version == EEPROM_CONFIG_VERSION_V17);
     const bool version_v16 = (version == EEPROM_CONFIG_VERSION_V16);
     const bool version_v15 = (version == EEPROM_CONFIG_VERSION_V15);
     const bool version_v14 = (version == EEPROM_CONFIG_VERSION_V14);
     const bool current_version = (version == EEPROM_CONFIG_VERSION);
     if (w[EEPROM_WORD_KEY] != FLASH_WRITE_KEY ||
-        (!version_v5 && !version_v6 && !version_v7 && !version_v8 && !version_v9 && !version_v10 && !version_v11 && !version_v12 && !version_v13 && !version_v14 && !version_v15 && !version_v16 && !current_version)) return false;
+        (!version_v5 && !version_v6 && !version_v7 && !version_v8 && !version_v9 && !version_v10 && !version_v11 && !version_v12 && !version_v13 && !version_v14 && !version_v15 && !version_v16 && !version_v17 && !current_version)) return false;
 
     /* v7: homing 64..69; v8: auto-home 70..71; v9-v11: Hall LUT 72..75;
      * v12-v14: persistent Encoder 4-state sequence 76..77. v15 adds MTPA/FW and advanced outer-loop configuration 78..119;
@@ -5010,6 +5019,10 @@ bool RuntimeSettings_Load(void)
             right.foc_motor_pole_pairs = (uint8_t)w[EEPROM_RIGHT_POLE_PAIRS];
     }
     if (current_version) {
+        if (w[EEPROM_LEFT_GEAR_RATIO_MILLI] < 1U || w[EEPROM_LEFT_GEAR_RATIO_MILLI] > 60000U ||
+            w[EEPROM_RIGHT_GEAR_RATIO_MILLI] < 1U || w[EEPROM_RIGHT_GEAR_RATIO_MILLI] > 60000U) return false;
+        left.si_gear_ratio_milli = w[EEPROM_LEFT_GEAR_RATIO_MILLI];
+        right.si_gear_ratio_milli = w[EEPROM_RIGHT_GEAR_RATIO_MILLI];
         if (w[EEPROM_LEFT_ENCODER_RATIO] <= 60U) motor_left.encoder_ratio = (uint8_t)w[EEPROM_LEFT_ENCODER_RATIO];
         else return false;
         if (w[EEPROM_RIGHT_ENCODER_RATIO] <= 60U) motor_right.encoder_ratio = (uint8_t)w[EEPROM_RIGHT_ENCODER_RATIO];

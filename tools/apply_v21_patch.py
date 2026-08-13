@@ -159,7 +159,7 @@ s = replace_once(
     "EEPROM accepted version list")
 # Current image has gear words. Older image load keeps defaults (1.000) from FOC defaults.
 needle = "    if (current_version) {\n        if (w[EEPROM_LEFT_ENCODER_RATIO] <= 60U) motor_left.encoder_ratio = (uint8_t)w[EEPROM_LEFT_ENCODER_RATIO];"
-replacement = "    if (current_version) {\n        if (w[EEPROM_LEFT_GEAR_RATIO_MILLI] < 1U || w[EEPROM_LEFT_GEAR_RATIO_MILLI] > 60000U ||\n            w[EEPROM_RIGHT_GEAR_RATIO_MILLI] < 1U || w[EEPROM_RIGHT_GEAR_RATIO_MILLI] > 60000U) return false;\n        conf_left.si_gear_ratio_milli = w[EEPROM_LEFT_GEAR_RATIO_MILLI];\n        conf_right.si_gear_ratio_milli = w[EEPROM_RIGHT_GEAR_RATIO_MILLI];\n        if (w[EEPROM_LEFT_ENCODER_RATIO] <= 60U) motor_left.encoder_ratio = (uint8_t)w[EEPROM_LEFT_ENCODER_RATIO];"
+replacement = "    if (current_version) {\n        if (w[EEPROM_LEFT_GEAR_RATIO_MILLI] < 1U || w[EEPROM_LEFT_GEAR_RATIO_MILLI] > 60000U ||\n            w[EEPROM_RIGHT_GEAR_RATIO_MILLI] < 1U || w[EEPROM_RIGHT_GEAR_RATIO_MILLI] > 60000U) return false;\n        left.si_gear_ratio_milli = w[EEPROM_LEFT_GEAR_RATIO_MILLI];\n        right.si_gear_ratio_milli = w[EEPROM_RIGHT_GEAR_RATIO_MILLI];\n        if (w[EEPROM_LEFT_ENCODER_RATIO] <= 60U) motor_left.encoder_ratio = (uint8_t)w[EEPROM_LEFT_ENCODER_RATIO];"
 # Variable names vary by release; fall back to regex discovery if needed.
 if needle in s:
     s = s.replace(needle, replacement, 1)

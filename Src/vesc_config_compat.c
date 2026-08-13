@@ -284,7 +284,7 @@ int32_t VescConfig_SerializeMc(uint8_t *b, bool right, bool defaults) {
     /* VESC si_motor_poles is TOTAL magnetic poles. Stock hoverboard has
      * 15 pole-pairs, therefore VESC Tool must show 30 motor poles. */
     b[i++] = (uint8_t)(c->foc_motor_pole_pairs * 2U);
-    append_auto(b, 1.0f, &i);
+    append_auto(b, (float)c->si_gear_ratio_milli / 1000.0f, &i);
     append_auto(b, 0.1f, &i);
     b[i++] = 0U;
     b[i++] = 10U;
@@ -407,12 +407,14 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
     i += 2; (void)get_auto(b, &i); (void)get_f16(b, 0.1f, &i); (void)get_f16(b, 10.0f, &i);
     i += 2;
     const uint8_t motor_poles_wire = b[i++];
-    (void)get_auto(b, &i); (void)get_auto(b, &i); i += 2; (void)get_auto(b, &i); (void)get_auto(b, &i);
+    const float gear_ratio_wire = get_auto(b, &i);
+    (void)get_auto(b, &i); i += 2; (void)get_auto(b, &i); (void)get_auto(b, &i);
     i += 2; for (uint8_t n = 0; n < 4U; ++n) (void)get_f16(b, n < 2U ? 100.0f : 1000.0f, &i); i += 1;
     if (i != (int32_t)VESC6_MCCONF_WIRE_SIZE) return false;
 
     if (!isfinite(current_max) || !isfinite(current_min) || !isfinite(erpm_max) ||
-        !isfinite(current_kp) || !isfinite(current_ki) || !isfinite(encoder_ratio)) return false;
+        !isfinite(current_kp) || !isfinite(current_ki) || !isfinite(encoder_ratio) ||
+        !isfinite(gear_ratio_wire)) return false;
     if (motor_poles_wire < 2U || motor_poles_wire > 120U || (motor_poles_wire & 1U) != 0U) {
         /* VESC's si_motor_poles is total magnetic poles. This fixed-point core
          * intentionally supports an integer pole-pair count, so odd total-pole
@@ -474,6 +476,9 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
      * fields. For this board physical pole-pairs remain the authoritative eRPM
      * conversion for BOTH motors; LEFT encoder_ratio only scales A/B angle. */
     c->foc_motor_pole_pairs = (uint8_t)(motor_poles_wire / 2U);
+    if (gear_ratio_wire < 0.001f || gear_ratio_wire > 60.0f) return false;
+    c->si_gear_ratio_milli = (uint16_t)lrintf(gear_ratio_wire * 1000.0f);
+    if (c->si_gear_ratio_milli == 0U) c->si_gear_ratio_milli = 1U;
 
     /* VESC limits and COMM_SET_RPM are electrical RPM. Internal sensor speed is
      * mechanical RPM*16, so preserve the wire eRPM limit using the FINAL ratio. */

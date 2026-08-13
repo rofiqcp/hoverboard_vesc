@@ -119,6 +119,9 @@ typedef struct {
     uint16_t foc_fw_backoff_q15;
 
     uint8_t foc_motor_pole_pairs;
+    /* VESC si_gear_ratio, stored as ratio*1000. It must remain independent
+     * from physical pole-pairs and encoder electrical ratio. */
+    uint16_t si_gear_ratio_milli;
     mc_foc_current_sample_mode foc_current_sample_mode;
 } mc_configuration;
 

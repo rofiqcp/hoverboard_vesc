@@ -165,7 +165,7 @@ typedef struct {
 static vesc_current_avg_t current_avg_left;
 static vesc_current_avg_t current_avg_right;
 
-#define VESC_CURRENT_HOLD_MAX_MS 25U
+#define VESC_CURRENT_HOLD_MAX_MS 100U
 
 static void current_avg_reset(vesc_current_avg_t *a, bool clear_last)
 {
@@ -218,14 +218,20 @@ void VescProtocol_CurrentTelemetrySample(void)
         const bool left = n == 0U;
         const bool bridge_active = MotorControl_BridgeActive(left);
 
-        if (!MotorControl_CurrentOffsetsValid() || !bridge_active ||
-            !MotorControl_CurrentMeasurementValid(left)) {
-            /* Count suppressed passive observations only as a diagnostic. */
+        if (!MotorControl_CurrentOffsetsValid() || !bridge_active) {
+            /* Released bridge must clear immediately so one motor can never leak
+             * stale current/voltage into the other virtual-CAN node. */
             int32_t id_abs = outs[n]->id; if (id_abs < 0) id_abs = -id_abs;
             int32_t iq_abs = outs[n]->iq; if (iq_abs < 0) iq_abs = -iq_abs;
             if ((id_abs + iq_abs) > 0 && a->passive_rejects != UINT16_MAX)
                 ++a->passive_rejects;
             current_avg_reset(a, true);
+            continue;
+        }
+        if (!MotorControl_CurrentMeasurementValid(left)) {
+            /* Low-side current reconstruction can be temporarily unavailable at
+             * a zero vector / sampling boundary. Keep the last accepted steady
+             * sample; current_avg_take applies the bounded 100-ms freshness rule. */
             continue;
         }
 
@@ -261,14 +267,9 @@ static void current_avg_take(bool right, int16_t *id, int16_t *iq, int16_t *dc_c
 
     /* Never publish a stale nonzero standard current after this motor's bridge is
      * released. This is the key cross-side/stuck-current invariant for virtual CAN. */
-    if (!MotorControl_BridgeActive(left) || !MotorControl_CurrentOffsetsValid() ||
-        !MotorControl_CurrentMeasurementValid(left)) {
+    if (!MotorControl_BridgeActive(left) || !MotorControl_CurrentOffsetsValid()) {
         current_avg_reset(a, true);
-        *id = 0;
-        *iq = 0;
-        *dc_centi_amp = 0;
-        *vd_mv = 0;
-        *vq_mv = 0;
+        *id = 0; *iq = 0; *dc_centi_amp = 0; *vd_mv = 0; *vq_mv = 0;
         return;
     }
 
@@ -325,7 +326,7 @@ static float motor_current_from_raw(bool right, int16_t id_raw, int16_t iq_raw)
     if (((int64_t)vq * (int64_t)iq_raw) < 0) mag = -mag;
     return mag;
 }
-static float duty(bool r){uint16_t q=r?motorOutputRight.duty_abs_q15:motorOutputLeft.duty_abs_q15;float d=(float)q/32767.0f;int16_t iq=r?motorOutputRight.iq:motorOutputLeft.iq;return iq<0?-d:d;}
+static float duty(bool r){uint16_t q=r?motorOutputRight.duty_abs_q15:motorOutputLeft.duty_abs_q15;float d=(float)q/32767.0f;motor_all_state_t*m=r?&motorRight:&motorLeft;int16_t mq=m->m_motor_state.mod_q;if(mq<0)return-d;if(mq>0)return d;if(m->m_control_mode==CONTROL_MODE_DUTY&&m->m_duty_cycle_set_q15<0)return-d;return d;}
 static int32_t erpm(bool r){
     mc_configuration*c=r?&motorConfRight:&motorConfLeft;
     motor_all_state_t*m=r?&motorRight:&motorLeft;
@@ -835,7 +836,7 @@ static void set_duty(bool r,float d){
     if (d > 1.0f) d = 1.0f;
     if (d < -1.0f) d = -1.0f;
     const int32_t normalized=(int32_t)lrintf(d*1000.0f);
-    const bool run=normalized!=0;
+    const bool run=true; /* SET_DUTY(0) is VESC Tool Full Brake, not release. */
     record_set_runtime(r,normalized,run);
     RuntimeControl_VescSetOne(!r,ESC_MODE_DUTY,normalized,run);
     RuntimeControl_VescAlive();last_uart_control_ms=RuntimeControl_MonotonicMs();
