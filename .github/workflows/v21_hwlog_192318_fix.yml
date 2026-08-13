@@ -19,6 +19,19 @@ jobs:
           ref: v21
           fetch-depth: 0
 
+      - name: Repair helper bootstrap typo
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/apply_v21_hwlog_192318_fix.py')
+          s=p.read_text()
+          bad='# Keep the other V21 protocol corrections (duty sign, config, commissioning, etc.).nv21 = read("Src/vesc_protocol.c")'
+          good='# Keep the other V21 protocol corrections (duty sign, config, commissioning, etc.).\nnv21 = read("Src/vesc_protocol.c")'
+          if bad not in s:
+              raise SystemExit('helper bootstrap typo anchor missing')
+          p.write_text(s.replace(bad, good, 1))
+          PY
+
       - name: Apply 19:23 hardware regression patch
         run: python3 tools/apply_v21_hwlog_192318_fix.py
 
