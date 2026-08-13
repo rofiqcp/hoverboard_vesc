@@ -888,10 +888,17 @@ void DMA1_Channel1_IRQHandler(void)
                                     right_calibration ? sensorCalibrationVoltageRight : 0, 0);
     }
 
-    const bool left_phase_valid = left_calibration || left_open ||
+    /* VESC Full Brake is duty=0 with the bridge deliberately active. On this
+     * PCB it is implemented as the same all-low-side zero vector already proven
+     * by current-offset calibration, so it requires no rotor phase. */
+    const bool left_full_brake = motorLeft.m_control_mode == CONTROL_MODE_DUTY &&
+        motorLeft.m_duty_cycle_set_q15 == 0;
+    const bool right_full_brake = motorRight.m_control_mode == CONTROL_MODE_DUTY &&
+        motorRight.m_duty_cycle_set_q15 == 0;
+    const bool left_phase_valid = left_calibration || left_open || left_full_brake ||
         motorLeft.m_control_mode == CONTROL_MODE_HANDBRAKE ||
         motorSensorSampleLeft.feedback_valid != 0U;
-    const bool right_phase_valid = right_calibration || right_open ||
+    const bool right_phase_valid = right_calibration || right_open || right_full_brake ||
         motorRight.m_control_mode == CONTROL_MODE_HANDBRAKE ||
         motorSensorSampleRight.feedback_valid != 0U;
     const bool left_request_ok = left_output_requested && left_current_ok && left_phase_valid;
@@ -907,6 +914,14 @@ void DMA1_Channel1_IRQHandler(void)
     if (left_request_ok && !left_domain_ready) set_current_zero_vector_left();
     if (right_request_ok && !right_domain_ready) set_current_zero_vector_right();
 
+    /* Hardware full-brake path. Once the active current domain is ready, hold
+     * CCR1/2/3 at zero with MOE asserted: all three low-side FETs are on, phase
+     * line-to-line voltage is zero and the motor is electrically shorted. This
+     * mirrors VESC foc_short_ls_on_zero_duty/full_brake_hw without adding any
+     * floating point or extra control loop to the 16-kHz DMA ISR. */
+    if (left_full_brake && left_domain_ready) set_current_zero_vector_left();
+    if (right_full_brake && right_domain_ready) set_current_zero_vector_right();
+
     /* Emergency liveness fallback is evaluated AFTER both sensors were sampled.
      * It only skips one FOC slot if even the one-motor interleaved path previously
      * exceeded an ADC period. */
@@ -919,6 +934,16 @@ void DMA1_Channel1_IRQHandler(void)
     const bool run_right_slot = motorFocSlotRight;
     motorFocSlotRight = !motorFocSlotRight;
     if (!run_right_slot) {
+        if (left_full_brake && left_domain_ready) {
+            /* Do not let centered SVPWM overwrite the all-low-side short. */
+            motorOutputLeft.duty_a = 0;
+            motorOutputLeft.duty_b = 0;
+            motorOutputLeft.duty_c = 0;
+            motorOutputLeft.duty_abs_q15 = 0U;
+            motorOutputLeft.id_target = 0;
+            motorOutputLeft.iq_target = 0;
+            commissioningFastStreakLeft = 0U;
+        } else {
         const mc_foc_sample_t left_sample = {
             .output_enabled = left_foc_enabled,
             .feedback_valid = motorSensorSampleLeft.feedback_valid != 0U,
@@ -931,7 +956,18 @@ void DMA1_Channel1_IRQHandler(void)
         mc_foc_run_current_control(&motorLeft, &left_sample, &motorOutputLeft, pwm_res);
         if (left_foc_enabled) set_pwm_left(&motorOutputLeft);
         commissioningFastStreakLeft = 0U;
+        }
     } else {
+        if (right_full_brake && right_domain_ready) {
+            /* RIGHT is independently shorted; LEFT state is untouched. */
+            motorOutputRight.duty_a = 0;
+            motorOutputRight.duty_b = 0;
+            motorOutputRight.duty_c = 0;
+            motorOutputRight.duty_abs_q15 = 0U;
+            motorOutputRight.id_target = 0;
+            motorOutputRight.iq_target = 0;
+            commissioningFastStreakRight = 0U;
+        } else {
         const mc_foc_sample_t right_sample = {
             .output_enabled = right_foc_enabled,
             .feedback_valid = motorSensorSampleRight.feedback_valid != 0U,
@@ -944,6 +980,7 @@ void DMA1_Channel1_IRQHandler(void)
         mc_foc_run_current_control(&motorRight, &right_sample, &motorOutputRight, pwm_res);
         if (right_foc_enabled) set_pwm_right(&motorOutputRight);
         commissioningFastStreakRight = 0U;
+        }
     }
 
     /* ISR only publishes raw engineering input current + validity. Averaging is

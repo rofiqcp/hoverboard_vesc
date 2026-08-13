@@ -28,3 +28,10 @@ Run the V21 full tester on real hardware. In particular, a LEFT encoder detect t
 - Integrated LEFT encoder / RIGHT Hall commissioning uses 1.00 A instead of 0.50 A; individual detect remains user-selectable and hard-capped by the existing 2 A safety limit.
 - Full tester now checks Rotor Position with upstream VESC `COMM_SET_DETECT` streaming semantics instead of treating `COMM_ROTOR_POSITION` as a request.
 - Firmware/tester release identity updated to V21.
+
+## Dual-motor hardware correction — 2026-08-13 18:16 run
+- Fixed integrated commissioning fault containment: RIGHT Hall is commissioned first and its successful proof is persisted even if LEFT encoder commissioning later fails. LEFT and RIGHT can therefore be debugged/run independently.
+- Full tester now derives LEFT/RIGHT readiness from each motor's actual post-detect state instead of the single Apply-All return value, so one failed side no longer skips all tests on the healthy side.
+- Implemented VESC Full Brake semantics on STM32F103 hoverboard hardware: `SET_DUTY(0)` keeps only the selected bridge active and asserts the validated all-low-side zero vector; `SET_CURRENT(0)` remains Stop/release with MOE off.
+- Full Brake bypasses sensor-angle readiness because the hardware short does not use rotor phase. Normal Duty/Current/RPM/Position/Current-Brake still require the selected side's valid feedback proof.
+- Added explicit LEFT/RIGHT Full-Brake→Stop hardware tests and regression contracts while preserving 16-kHz dual-sensor sampling and 8-kHz-per-motor interleaved FOC.

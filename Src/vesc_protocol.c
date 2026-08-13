@@ -115,14 +115,17 @@ static uint32_t display_position_last_left_ms = 0U;
 static uint32_t display_position_last_right_ms = 0U;
 
 typedef enum {
-    AUTO_DETECT_IDLE = 0, AUTO_DETECT_WAIT_CURRENT_CAL, AUTO_DETECT_LEFT_ENCODER,
-    AUTO_DETECT_RIGHT_HALL, AUTO_DETECT_LEFT_SYNC, AUTO_DETECT_REPLY
+    AUTO_DETECT_IDLE = 0, AUTO_DETECT_WAIT_CURRENT_CAL, AUTO_DETECT_RIGHT_HALL,
+    AUTO_DETECT_LEFT_ENCODER, AUTO_DETECT_LEFT_SYNC, AUTO_DETECT_REPLY
 } auto_detect_stage_t;
 typedef struct {
     bool active;
     auto_detect_stage_t stage;
     int16_t result;
     uint16_t reply_retries;
+    bool right_hall_ok;
+    bool left_encoder_ok;
+    bool left_sync_ok;
 } VescAutoDetect;
 static VescAutoDetect auto_detect;
 static bool protocol_initialized = false;
@@ -1069,7 +1072,9 @@ static void auto_detect_start(bool right)
     auto_detect.stage=AUTO_DETECT_WAIT_CURRENT_CAL;
     auto_detect.result=-1;
     if(!MotorControl_RequestCurrentOffsetCalibration() && MotorControl_CurrentOffsetsValid()){
-        if(RuntimeControl_VescStartSensorDetect(true,MOTOR_SENSOR_ENCODER_AB,detect_current_internal(false,VESC_AUTO_DETECT_CURRENT_A)))
+        if(RuntimeControl_VescStartSensorDetect(false,MOTOR_SENSOR_HALL_UVW,detect_current_internal(true,VESC_AUTO_DETECT_CURRENT_A)))
+            auto_detect.stage=AUTO_DETECT_RIGHT_HALL;
+        else if(RuntimeControl_VescStartSensorDetect(true,MOTOR_SENSOR_ENCODER_AB,detect_current_internal(false,VESC_AUTO_DETECT_CURRENT_A)))
             auto_detect.stage=AUTO_DETECT_LEFT_ENCODER;
         else auto_detect.stage=AUTO_DETECT_REPLY;
     }
@@ -1084,6 +1089,22 @@ static void auto_detect_service(void)
     case AUTO_DETECT_WAIT_CURRENT_CAL:
         if(MotorControl_CurrentOffsetCalState()==MOTOR_CURRENT_CAL_FAILED){auto_detect.stage=AUTO_DETECT_REPLY;break;}
         if(MotorControl_CurrentOffsetsValid()){
+            /* The two physical motors are independent. Commission the Hall-only
+             * RIGHT motor first so a difficult LEFT steering encoder can never
+             * prevent RIGHT from becoming a valid closed-loop controller. */
+            if(RuntimeControl_VescStartSensorDetect(false,MOTOR_SENSOR_HALL_UVW,detect_current_internal(true,VESC_AUTO_DETECT_CURRENT_A)))
+                auto_detect.stage=AUTO_DETECT_RIGHT_HALL;
+            else if(RuntimeControl_VescStartSensorDetect(true,MOTOR_SENSOR_ENCODER_AB,detect_current_internal(false,VESC_AUTO_DETECT_CURRENT_A)))
+                auto_detect.stage=AUTO_DETECT_LEFT_ENCODER;
+            else auto_detect.stage=AUTO_DETECT_REPLY;
+        }
+        break;
+    case AUTO_DETECT_RIGHT_HALL:
+        if(RuntimeControl_VescPollSensorDetect(false,MOTOR_SENSOR_HALL_UVW,&res)){
+            auto_detect.right_hall_ok=(res.state==ESC_SENSOR_CAL_SUCCESS);
+            /* sensor_cal_finish(AUTO) already persisted a successful RIGHT Hall
+             * candidate. Continue LEFT regardless of RIGHT result so Apply-All
+             * gathers independent evidence for both physical sides. */
             if(RuntimeControl_VescStartSensorDetect(true,MOTOR_SENSOR_ENCODER_AB,detect_current_internal(false,VESC_AUTO_DETECT_CURRENT_A)))
                 auto_detect.stage=AUTO_DETECT_LEFT_ENCODER;
             else auto_detect.stage=AUTO_DETECT_REPLY;
@@ -1091,28 +1112,29 @@ static void auto_detect_service(void)
         break;
     case AUTO_DETECT_LEFT_ENCODER:
         if(RuntimeControl_VescPollSensorDetect(true,MOTOR_SENSOR_ENCODER_AB,&res)){
-            if(res.state!=ESC_SENSOR_CAL_SUCCESS){auto_detect.stage=AUTO_DETECT_REPLY;break;}
-            if(RuntimeControl_VescStartSensorDetect(false,MOTOR_SENSOR_HALL_UVW,detect_current_internal(true,VESC_AUTO_DETECT_CURRENT_A)))
-                auto_detect.stage=AUTO_DETECT_RIGHT_HALL;
-            else auto_detect.stage=AUTO_DETECT_REPLY;
-        }
-        break;
-    case AUTO_DETECT_RIGHT_HALL:
-        if(RuntimeControl_VescPollSensorDetect(false,MOTOR_SENSOR_HALL_UVW,&res)){
-            if(res.state!=ESC_SENSOR_CAL_SUCCESS){auto_detect.stage=AUTO_DETECT_REPLY;break;}
-            if(RuntimeControl_RequestEncoderSync(true))auto_detect.stage=AUTO_DETECT_LEFT_SYNC;
-            else if(RuntimeControl_EncoderElectricalReady(true)){
-                auto_detect.result=RuntimeSettings_Save()?2:-1;
+            auto_detect.left_encoder_ok=(res.state==ESC_SENSOR_CAL_SUCCESS);
+            if(auto_detect.left_encoder_ok && RuntimeControl_RequestEncoderSync(true)){
+                auto_detect.stage=AUTO_DETECT_LEFT_SYNC;
+            } else if(auto_detect.left_encoder_ok && RuntimeControl_EncoderElectricalReady(true)) {
+                auto_detect.left_sync_ok=true;
+                auto_detect.result=(auto_detect.right_hall_ok && RuntimeSettings_Save())?2:-1;
                 auto_detect.stage=AUTO_DETECT_REPLY;
-            } else auto_detect.stage=AUTO_DETECT_REPLY;
+            } else {
+                /* RIGHT proof, when successful, remains committed and usable. */
+                auto_detect.result=-1;
+                auto_detect.stage=AUTO_DETECT_REPLY;
+            }
         }
         break;
     case AUTO_DETECT_LEFT_SYNC:
         if(!RuntimeControl_EncoderAlignmentActive(true)){
-            if(RuntimeControl_EncoderElectricalReady(true)){
-                /* Terminal success means runtime state AND EEPROM persistence
-                 * succeeded. Never report result=2 and silently drop calibration. */
+            auto_detect.left_sync_ok=RuntimeControl_EncoderElectricalReady(true);
+            if(auto_detect.right_hall_ok && auto_detect.left_encoder_ok && auto_detect.left_sync_ok){
+                /* Terminal success means BOTH runtime states and EEPROM persistence
+                 * succeeded. A partial board is intentionally reported as failure. */
                 auto_detect.result=RuntimeSettings_Save()?2:-1;
+            } else {
+                auto_detect.result=-1;
             }
             auto_detect.stage=AUTO_DETECT_REPLY;
         }
@@ -1265,7 +1287,7 @@ static void terminal_command(const uint8_t *data, uint16_t len)
         RuntimeControl_VescReleaseAll();
         auto_detect_start(false);
         send_print(auto_detect.active && auto_detect.stage != AUTO_DETECT_REPLY ?
-            "HB integrated detect started: current-cal -> LEFT encoder -> RIGHT Hall -> LEFT sync -> EEPROM\n" :
+            "HB integrated detect started: current-cal -> RIGHT Hall -> LEFT encoder -> LEFT sync -> EEPROM\n" :
             "HB integrated detect rejected/busy\n");
         return;
     }

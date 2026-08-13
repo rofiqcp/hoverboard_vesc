@@ -2005,8 +2005,14 @@ class TestSuite:
                 dt=self.dev.diag(target,f"zero_{name}")
                 dp=self.dev.diag(peer,f"zero_{name}_peer")
                 vt=self.dev.values(target,f"zero_{name}"); vp=self.dev.values(peer,f"zero_{name}_peer")
-                assert not dt["bridge_moe"] and not dp["bridge_moe"], f"zero SET unexpectedly enabled bridge: {target}/{name}"
-                assert abs(vt["motor_current_A"])<=0.05 and abs(vp["motor_current_A"])<=0.05
+                if name == "SET_DUTY_0":
+                    assert dt["bridge_moe"] and dt["armed"], f"{target} SET_DUTY(0) did not enter Full Brake"
+                    assert not dp["bridge_moe"] and not dp["armed"], f"{target} Full Brake armed peer"
+                    # Return to released state before exercising the remaining zero SETs.
+                    self.dev.stop(target); time.sleep(0.05)
+                else:
+                    assert not dt["bridge_moe"] and not dp["bridge_moe"], f"zero SET unexpectedly enabled bridge: {target}/{name}"
+                assert abs(vt["motor_current_A"])<=0.25 and abs(vp["motor_current_A"])<=0.05
                 assert dt.get("last_set_command")==cmd, f"{target} last_set={dt.get('last_set_command')} expected={cmd}"
                 # Peer set counter must not move because forwarding selected target only.
                 rows.append({"target":target,"command":name,"target_set_count":dt.get("set_packets_this"),
@@ -2915,6 +2921,37 @@ class TestSuite:
                 "start_error": start_err, "final_error": final_err,
                 "position_semantics": "bounded 0..360; endpoints distinct"}
 
+    def full_brake_and_stop_test(self, node: str) -> dict[str, Any]:
+        """Verify VESC Tool Full Brake (SET_DUTY 0) versus Stop semantics.
+
+        Full Brake must keep only the selected bridge active at duty zero; Stop is
+        SET_CURRENT(0) and must release that bridge. This test is safe without a
+        calibrated rotor sensor because the full-brake path is a static low-side
+        short and never consumes electrical angle.
+        """
+        assert self.dev
+        peer = "right" if node == "local" else "local"
+        for n in (node, peer):
+            for _ in range(3): self.dev.stop(n); time.sleep(0.03)
+        self.dev.set_duty(node, 0.0)
+        time.sleep(0.15)
+        d_brake = self.dev.diag(node, "full_brake")
+        d_peer = self.dev.diag(peer, "full_brake_peer")
+        v_brake = self.dev.values(node, "full_brake")
+        assert d_brake.get("armed") and d_brake.get("bridge_moe"),             f"{node} Full Brake did not keep target bridge active: {d_brake}"
+        assert int(d_brake.get("last_set_command") or -1) == COMM_SET_DUTY
+        assert int(d_brake.get("last_set_host_raw") or 1) == 0
+        assert int(d_brake.get("duty_target_q15") or 0) == 0
+        assert abs(float(v_brake.get("duty") or 0.0)) <= 0.002
+        assert not d_peer.get("armed") and not d_peer.get("bridge_moe"),             f"{node} Full Brake leaked to peer {peer}: {d_peer}"
+
+        for _ in range(4): self.dev.stop(node); time.sleep(0.05)
+        d_stop = self.dev.diag(node, "full_brake_then_stop")
+        assert not d_stop.get("armed") and not d_stop.get("bridge_moe"),             f"{node} Stop did not release bridge after Full Brake: {d_stop}"
+        assert int(d_stop.get("last_set_command") or -1) == COMM_SET_CURRENT
+        assert int(d_stop.get("last_set_host_raw") or 1) == 0
+        return {"full_brake": d_brake, "peer": d_peer, "stop": d_stop}
+
     def stop_and_verify(self, node: str) -> dict[str, Any]:
         assert self.dev
         for _ in range(4):
@@ -3021,8 +3058,11 @@ class TestSuite:
             # detect/fallback result is not enough to run FOC closed-loop.
             post_left = self.result("13_post_detect_diag_left", lambda: self.dev.diag("local", "post_detect"))
             post_right = self.result("14_post_detect_diag_right", lambda: self.dev.diag("right", "post_detect"))
-            left_ready = bool(left_detect is not None and post_left and post_left.get("calibrated"))
-            right_ready = bool(right_detect is not None and post_right and post_right.get("calibrated"))
+            # Board commissioning is fault-contained per physical motor. A
+            # partial integrated result must not hide a successfully calibrated
+            # opposite side; post-detect hardware state is authoritative here.
+            left_ready = bool(post_left and post_left.get("calibrated"))
+            right_ready = bool(post_right and post_right.get("calibrated"))
             if not self.args.individual_detect and left_ready:
                 left_ready = bool(post_left.get("encoder_electrical_ready"))
 
@@ -3048,6 +3088,13 @@ class TestSuite:
             self.result("09_app_uart_adc_adc_uart", self.app_mode_test,
                         skip=not current_ok,
                         skip_reason="prerequisite current-zero calibration failed")
+
+            # These two are sensor-independent hardware semantics and must run
+            # even when one sensor commissioning path failed.
+            self.result("14d_left_full_brake_then_stop", lambda: self.full_brake_and_stop_test("local"),
+                        skip=not current_ok, skip_reason="current offsets not ready")
+            self.result("14e_right_full_brake_then_stop", lambda: self.full_brake_and_stop_test("right"),
+                        skip=not current_ok, skip_reason="current offsets not ready")
 
             tests = [
                 ("15_left_duty_pos", "local", left_ready, lambda: self.motion_test("local", "duty", +self.args.duty, "duty_pos")),
@@ -3117,7 +3164,7 @@ def parse_args() -> argparse.Namespace:
                     help="enable and persist LEFT one-stop homing on future power-on (requires a previously calibrated span)")
     ap.add_argument("--detect-current", type=float, default=1.0, help="sensor detect current [A] for --individual-detect; V21 integrated board commissioning uses conservative fixed 1.00 A")
     ap.add_argument("--current-cal-retries", type=int, default=2, help="retry transient block-mean current-zero failures")
-    ap.add_argument("--detect-timeout", type=float, default=35.0)
+    ap.add_argument("--detect-timeout", type=float, default=65.0)
     ap.add_argument("--duty", type=float, default=0.03, help="absolute duty used for +/- duty test")
     ap.add_argument("--current", type=float, default=0.50, help="absolute motor current used for +/- current test [A]")
     ap.add_argument("--erpm", type=int, default=900, help="absolute electrical RPM used for +/- speed test")

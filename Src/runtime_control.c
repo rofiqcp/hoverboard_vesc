@@ -2346,10 +2346,15 @@ static bool safe_to_arm_motor(bool left)
  * only requires the sensor proof actually needed by the selected motor; OPEN is
  * allowed without Hall/encoder calibration. Runtime sensor loss is still handled
  * after ARM by the normal sensor/core fault monitor. */
-static bool prearm_feedback_not_ready(uint8_t mode, const MotorRuntimeConfig *cfg,
+static bool prearm_feedback_not_ready(uint8_t mode, int32_t target,
+                                      const MotorRuntimeConfig *cfg,
                                       const MotorSensorSample *sample, bool encoder_aligned)
 {
-    if (mode == ESC_MODE_OPEN || mode == ESC_MODE_HANDBRAKE) return false;
+    /* VESC Full Brake is SET_DUTY(0). It does not need rotor angle because the
+     * F103 implementation shorts all three low sides directly. OPEN and
+     * handbrake also own their phase independently from the feedback backend. */
+    if (mode == ESC_MODE_OPEN || mode == ESC_MODE_HANDBRAKE ||
+        (mode == ESC_MODE_DUTY && target == 0)) return false;
     if (cfg == NULL || sample == NULL) return true;
     if (cfg->sensor_type == MOTOR_SENSOR_HALL_UVW) {
         return cfg->hall_calibrated == 0U || cfg->hall_lut_valid == 0U ||
@@ -2913,7 +2918,8 @@ static void try_arm_motor(bool left, uint32_t now)
     }
     const MotorSensorSample *sample = left ? &motorSensorSampleLeft : &motorSensorSampleRight;
     const bool encoder_aligned = left ? encoderAlignedLeft : encoderAlignedRight;
-    if (prearm_feedback_not_ready(mode, cfg, sample, encoder_aligned)) {
+    const int32_t requested_target = left ? runtimeSetpointLeft : runtimeSetpointRight;
+    if (prearm_feedback_not_ready(mode, requested_target, cfg, sample, encoder_aligned)) {
         set_arm_reject(left, ESC_ARM_REJECT_SENSOR_OR_FOC);
         return;
     }
