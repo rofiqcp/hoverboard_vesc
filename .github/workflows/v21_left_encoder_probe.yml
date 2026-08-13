@@ -21,6 +21,18 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          # The generic native encoder routine still uses full electrical turns.
+          # Name that policy explicitly so VESC-wire detection is unambiguously
+          # the dedicated +/-120-degree state machine.
+          p=Path('Src/runtime_control.c'); r=p.read_text()
+          anchor='#define SENSOR_CAL_VESC_POLE_PAIRS_MAX           60U'
+          if r.count(anchor)!=1: raise SystemExit('pole-pair macro anchor')
+          r=r.replace(anchor,
+              '#define SENSOR_CAL_NATIVE_ENCODER_FORWARD_SWEEPS 3U\n'
+              '#define SENSOR_CAL_NATIVE_ENCODER_REVERSE_SWEEPS 3U\n'+anchor,1)
+          r=r.replace('SENSOR_CAL_ENCODER_FORWARD_SWEEPS','SENSOR_CAL_NATIVE_ENCODER_FORWARD_SWEEPS')
+          r=r.replace('SENSOR_CAL_ENCODER_REVERSE_SWEEPS','SENSOR_CAL_NATIVE_ENCODER_REVERSE_SWEEPS')
+          p.write_text(r)
           def rep(path, old, new):
               p=Path(path); s=p.read_text()
               if s.count(old)!=1: raise SystemExit(f'{path}: expected one anchor, got {s.count(old)}')
@@ -36,7 +48,7 @@ jobs:
               "assert 'cfg->encoder_cpr + den / 2U' in runtime and 'encoder_probe_ratio_sum' in runtime")
           rep('tests/test_v17_units_config_speed_contract.py',
           '''for token in ('SENSOR_CAL_ENCODER_FORWARD_SWEEPS 3U',\n              'SENSOR_CAL_ENCODER_REVERSE_SWEEPS 3U',\n              'encoder_transition_mid[16]', 'encoder_direction_normal_score',\n              'encoder_direction_inverted_score', 'encoder_direction_proved',\n              'sensor_cal_encoder_direction_proof'):\n    assert token in runtime, token\nassert 'sensorCal.encoder_forward_delta = state->position_ticks - sensorCal.encoder_start;' in runtime''',
-          '''for token in ('SENSOR_CAL_ENCODER_PROBE_Q4            1920',\n              'SENSOR_CAL_ENCODER_PROBE_MIN_VALID',\n              'encoder_direction_normal_score', 'encoder_direction_inverted_score',\n              'encoder_direction_proved', 'sensor_cal_encoder_probe_record',\n              'LeftEncoder_GetCount()'):\n    assert token in runtime, token\nassert 'SENSOR_CAL_ENCODER_FORWARD_SWEEPS' not in runtime''')
+          '''for token in ('SENSOR_CAL_ENCODER_PROBE_Q4            1920',\n              'SENSOR_CAL_ENCODER_PROBE_MIN_VALID',\n              'encoder_direction_normal_score', 'encoder_direction_inverted_score',\n              'encoder_direction_proved', 'sensor_cal_encoder_probe_record',\n              'LeftEncoder_GetCount()'):\n    assert token in runtime, token\nassert 'SENSOR_CAL_NATIVE_ENCODER_FORWARD_SWEEPS 3U' in runtime''')
           PY
       - name: Install tools
         run: python3 -m pip install --disable-pip-version-check pytest platformio
