@@ -42,7 +42,7 @@ new = """# 2) V21 keeps TIM4/quadrature health evidence but never turns the alre
 # configured pole-pair into a fake measured encoder ratio. Ratio must come from
 # commanded electrical motion versus measured A/B motion.
 assert 'encoder_ratio_fallback_used' in runtime
-assert 'do NOT prove encoder ratio/pole-pairs' in runtime
+assert 'does NOT prove encoder ratio/pole-pairs' in runtime
 assert 'configured_pp' not in runtime
 assert 'sensorCal.encoder_ratio_fallback_used = false;' in runtime
 """
@@ -68,7 +68,7 @@ assert 'sensorCal.encoder_ratio_fallback_used = true;' in fb
 new = """# 2) Latest LEFT log proved all-four-state clean quadrature with many valid/0
 # invalid edges but near-zero net displacement. V21 correctly treats that only as
 # sensor-health evidence; it must not fabricate configured pole-pairs as measured ratio.
-assert 'do NOT prove encoder ratio/pole-pairs' in runtime
+assert 'does NOT prove encoder ratio/pole-pairs' in runtime
 assert 'configured_pp' not in runtime
 assert 'sensorCal.encoder_ratio_fallback_used = false;' in runtime
 assert 'sensor_cal_measured_encoder_offset_deg' in runtime
@@ -83,6 +83,11 @@ replace_exact(
     "# V17 refines V15: all non-zero primary SETs still route directly, while exact\n# zero Duty/Current/RPM has VESC stop semantics rather than holding MOE active.\nassert 'const bool run=normalized!=0;' in vesc",
     "# V21 matches VESC Tool: exact zero Duty is Full Brake and remains armed;\n# zero Current/RPM retain their release/stop semantics.\nassert 'const bool run=true;' in vesc",
     'v15 zero-duty contract')
+replace_exact(
+    'tests/test_v15_vescflow_v1isr.py',
+    "for token in ('encoder_session_valid_edges_start', 'encoder_session_invalid_transitions_start',\n              'encoder_session_seen_mask', 'sensorCal.encoder_session_seen_mask == 0x0FU'):",
+    "for token in ('encoder_session_valid_edges_start', 'encoder_session_invalid_transitions_start',\n              'encoder_session_seen_mask'):",
+    'v15 session evidence contract')
 
 # V18 brake polarity contract: preserve moving-speed sign opposition and require
 # the new zero-speed deadband that prevents +/- Hall RPM chatter from flipping Iq.
