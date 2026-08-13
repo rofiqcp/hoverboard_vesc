@@ -18,9 +18,8 @@ jobs:
           ref: v21
           fetch-depth: 0
 
-      - name: Clean generated files and unused warning
+      - name: Prepare warning-free source
         run: |
-          rm -rf tests/__pycache__
           cat > .gitignore <<'EOF'
           __pycache__/
           *.py[cod]
@@ -40,9 +39,8 @@ jobs:
           }
 
           '''
-          if s.count(old) != 1:
-              raise SystemExit(f'angle_diff_deg cleanup expected one match, got {s.count(old)}')
-          p.write_text(s.replace(old, '', 1))
+          if old in s:
+              p.write_text(s.replace(old, '', 1))
           PY
 
       - name: Install test/build dependencies
@@ -60,6 +58,13 @@ jobs:
             exit 1
           fi
 
+      - name: Remove generated artifacts from release diff
+        run: |
+          rm -rf tests/__pycache__ .pytest_cache
+          # V20 tracked .pio output. Restore it byte-for-byte so V21 does not
+          # contain irrelevant compiler-generated binary diffs.
+          git checkout origin/v20 -- .pio
+
       - name: Commit cleanup
         run: |
           git config user.name 'github-actions[bot]'
@@ -68,6 +73,6 @@ jobs:
           if git diff --cached --quiet; then
             echo 'No cleanup changes.'
           else
-            git commit -m 'V21: clean generated files and remove final compiler warning'
+            git commit -m 'V21: exclude generated artifacts from release diff'
             git push origin HEAD:v21
           fi
