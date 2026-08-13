@@ -1,0 +1,55 @@
+name: V21 dual motor runtime fix
+
+on:
+  push:
+    branches: [v21]
+    paths:
+      - '.github/workflows/v21_dual_motor_runtime_fix.yml'
+      - 'tools/apply_v21_dual_motor_runtime_fix.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v21
+          fetch-depth: 0
+
+      - name: Apply dual-motor runtime patch
+        run: python3 tools/apply_v21_dual_motor_runtime_fix.py
+
+      - name: Install validation tools
+        run: python3 -m pip install --disable-pip-version-check pytest platformio
+
+      - name: Regression suite warning-clean
+        run: python3 -m pytest -q -W error
+
+      - name: Warning-free STM32F103RC build
+        run: |
+          set -o pipefail
+          pio run -e esc 2>&1 | tee /tmp/v21_dual_build.log
+          if grep -E '(^|: )[Ww]arning:' /tmp/v21_dual_build.log; then
+            echo 'Compiler warning detected; refusing dual-motor commit.'
+            exit 1
+          fi
+
+      - name: Keep generated artifacts out of release diff
+        run: |
+          rm -rf tests/__pycache__ .pytest_cache
+          git checkout origin/v20 -- .pio || true
+
+      - name: Commit validated firmware and tester
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Src tools/vesc_full_test.py tests CHANGELOG_V21.md
+          if git diff --cached --quiet; then
+            echo 'No validated source changes.'
+          else
+            git commit -m 'V21: restore independent RIGHT and hardware full brake'
+            git push origin HEAD:v21
+          fi
