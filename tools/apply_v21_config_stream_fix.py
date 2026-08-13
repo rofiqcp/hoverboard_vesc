@@ -42,5 +42,12 @@ if 'out: dict[str, Any] = {}' not in s[start:case]:
     s=s[:case]+'        out: dict[str, Any] = {}\n'+s[case:]
 p.write_text(s)
 
+# Standalone MCCONF unit links vesc_config_compat without runtime_control.c, so it
+# must provide the two mirror globals now referenced transactionally.
+rep('tests/test_vesc_config_wire.c',
+'''mc_configuration motorConfLeft, motorConfRight;\nMotorRuntimeConfig motorConfigLeft, motorConfigRight;''',
+'''mc_configuration motorConfLeft, motorConfRight;\nPositionPidConfig positionPidConfigLeft, positionPidConfigRight;\nMotorRuntimeConfig motorConfigLeft, motorConfigRight;''',
+'host fixture position mirrors')
+
 (R/'tests/test_v21_config_stream_205320.py').write_text('''from pathlib import Path\nR=Path(__file__).resolve().parents[1]\ndef s(p): return (R/p).read_text()\ndef test_pid_persistence_owner():\n r=s("Src/runtime_control.c"); assert "positionPidConfigLeft.kp_q16 = motorConfLeft.p_pid_kp_q16" in r\n v=s("Src/vesc_config_compat.c"); assert "const mc_configuration old_c = *c;" in v and "*c = old_c;" in v\ndef test_rotor_tester_result_dict():\n t=s("tools/vesc_full_test.py"); i=t.index("def rotor_position_stream_test"); j=t.index("def homing_calibration_test",i); assert "out: dict[str, Any] = {}" in t[i:j]\n''')
 print('config/stream patch staged')
