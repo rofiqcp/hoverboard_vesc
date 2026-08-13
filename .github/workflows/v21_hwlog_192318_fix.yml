@@ -47,6 +47,7 @@ jobs:
           rep('tests/test_resource_contract.py', "assert 'VESC_CURRENT_HOLD_MAX_MS 100U' in protocol", "assert 'VESC_CURRENT_HOLD_MAX_MS 25U' in protocol")
           rep('tests/test_v18_rpm_current_brake_contract.py', "assert 'speed_q4 > -32 && speed_q4 < 32' in foc_c\nassert 'speed_q4 < 0 ? mag : (int16_t)-mag' in foc_c", "assert 'if (speed_q4 < 0) iq_target = mag;' in foc_c\nassert 'else if (speed_q4 > 0) iq_target = (int16_t)-mag;' in foc_c\nassert 'else iq_target = 0;' in foc_c\nassert 'speed_q4 > -32 && speed_q4 < 32' not in foc_c")
           rep('tests/test_v19_integrated_position_sync_home.py', 'assert "NB_OF_VAR             ((uint8_t)158U)" in eeprom_h', 'assert "NB_OF_VAR             ((uint8_t)162U)" in eeprom_h')
+          rep('tests/test_v19_integrated_position_sync_home.py', 'for token in ("C_SET_DETECT=11", "C_ROTOR_POSITION=22", "rotor_position_stream_service",\n              ">=10U", "display_position_mode_left=0U", "display_position_mode_right=0U"):\n    assert token in proto', 'for token in ("C_SET_DETECT=11", "C_ROTOR_POSITION=22", "rotor_position_stream_service",\n              ">=10U", "display_position_mode_left=mode", "display_position_mode_right=mode"):\n    assert token in proto\nassert "if(mode!=0U)display_position_mode_left=0U" not in proto\nassert "if(mode!=0U)display_position_mode_right=0U" not in proto')
           obsolete=Path('tests/test_v21_dual_motor_runtime.py')
           if obsolete.exists(): obsolete.unlink()
           PY
