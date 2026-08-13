@@ -87,7 +87,7 @@ assert "int16_t q_probe = axis_vmax" in foc
 assert "if (qmax > axis_vmax) qmax = axis_vmax" in foc
 
 # Diagnostic/tester contract for the new integrated states.
-assert 'TESTER_RELEASE = "V20"' in tester
+assert 'TESTER_RELEASE = "V21"' in tester
 assert "HBTS_VERSION = 15" in tester
 for token in ("encoder_electrical_ready", "steering_calibrated", "steering_homed",
               "logical_position_deg", "homing_on_boot", "auto_detect_stage",

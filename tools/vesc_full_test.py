@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-shot VESC-compatible V20 bench test for the dual hoverboard controller.
+"""One-shot VESC-compatible V21 bench test for the dual hoverboard controller.
 
 The script produces a timestamped diagnostic bundle that can be sent back for
 troubleshooting. It uses only the public VESC UART protocol plus a read-only
@@ -34,7 +34,7 @@ import traceback
 from typing import Any, Callable, Optional
 
 # VESC 6.00 command IDs used by this firmware.
-TESTER_RELEASE = "V20"
+TESTER_RELEASE = "V21"
 
 COMM_FW_VERSION = 0
 COMM_GET_VALUES = 4
@@ -1928,7 +1928,9 @@ class TestSuite:
             sel=self.dev.values_selective(node,values_mask,"get_matrix_values_selective")
             setup=self.dev.setup_values(node, label="get_matrix_setup")
             setup_sel=self.dev.setup_values(node, mask=setup_mask, label="get_matrix_setup_selective")
-            rotor=self.dev.rotor_position(node)
+            rotor_samples=self.dev.collect_rotor_positions(node,4,seconds=0.12)
+            assert rotor_samples, f"{node} PID-position rotor stream produced no COMM_ROTOR_POSITION frames"
+            rotor=rotor_samples[-1]
             mc=self.dev.transact(bytes((COMM_GET_MCCONF,)),node=node,timeout=3.0)
             mcd=self.dev.transact(bytes((COMM_GET_MCCONF_DEFAULT,)),node=node,timeout=3.0)
             app=self.dev.transact(bytes((COMM_GET_APPCONF,)),node=node,timeout=3.0)
@@ -3108,12 +3110,12 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--full", action="store_true", help="run integrated commissioning and motor movement tests")
     ap.add_argument("--yes", action="store_true", help="non-interactive confirmation for motion/homing writes")
     ap.add_argument("--individual-detect", action="store_true",
-                    help="use legacy separate LEFT encoder and RIGHT Hall detect instead of V20 integrated board commissioning")
+                    help="use legacy separate LEFT encoder and RIGHT Hall detect instead of V21 integrated board commissioning")
     ap.add_argument("--homing-calibrate", action="store_true",
                     help="opt-in LEFT full hard-stop calibration: right stop=0, left stop=360, save span, return 180")
     ap.add_argument("--homing-on", action="store_true",
                     help="enable and persist LEFT one-stop homing on future power-on (requires a previously calibrated span)")
-    ap.add_argument("--detect-current", type=float, default=0.5, help="sensor detect current [A] for --individual-detect; V20 integrated board commissioning intentionally uses fixed 0.50 A")
+    ap.add_argument("--detect-current", type=float, default=1.0, help="sensor detect current [A] for --individual-detect; V21 integrated board commissioning uses conservative fixed 1.00 A")
     ap.add_argument("--current-cal-retries", type=int, default=2, help="retry transient block-mean current-zero failures")
     ap.add_argument("--detect-timeout", type=float, default=35.0)
     ap.add_argument("--duty", type=float, default=0.03, help="absolute duty used for +/- duty test")

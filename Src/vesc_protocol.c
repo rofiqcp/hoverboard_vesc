@@ -50,6 +50,7 @@ enum {
 #define VESC_FW_MAJOR 6U
 #define VESC_FW_MINOR 0U
 #define UART_OVERRIDE_MS 300U
+#define VESC_AUTO_DETECT_CURRENT_A 1.0f
 
 typedef enum {
     VESC_SIDE_LEFT = 0,
@@ -1068,7 +1069,7 @@ static void auto_detect_start(bool right)
     auto_detect.stage=AUTO_DETECT_WAIT_CURRENT_CAL;
     auto_detect.result=-1;
     if(!MotorControl_RequestCurrentOffsetCalibration() && MotorControl_CurrentOffsetsValid()){
-        if(RuntimeControl_VescStartSensorDetect(true,MOTOR_SENSOR_ENCODER_AB,detect_current_internal(false,0.5f)))
+        if(RuntimeControl_VescStartSensorDetect(true,MOTOR_SENSOR_ENCODER_AB,detect_current_internal(false,VESC_AUTO_DETECT_CURRENT_A)))
             auto_detect.stage=AUTO_DETECT_LEFT_ENCODER;
         else auto_detect.stage=AUTO_DETECT_REPLY;
     }
@@ -1083,7 +1084,7 @@ static void auto_detect_service(void)
     case AUTO_DETECT_WAIT_CURRENT_CAL:
         if(MotorControl_CurrentOffsetCalState()==MOTOR_CURRENT_CAL_FAILED){auto_detect.stage=AUTO_DETECT_REPLY;break;}
         if(MotorControl_CurrentOffsetsValid()){
-            if(RuntimeControl_VescStartSensorDetect(true,MOTOR_SENSOR_ENCODER_AB,detect_current_internal(false,0.5f)))
+            if(RuntimeControl_VescStartSensorDetect(true,MOTOR_SENSOR_ENCODER_AB,detect_current_internal(false,VESC_AUTO_DETECT_CURRENT_A)))
                 auto_detect.stage=AUTO_DETECT_LEFT_ENCODER;
             else auto_detect.stage=AUTO_DETECT_REPLY;
         }
@@ -1091,7 +1092,7 @@ static void auto_detect_service(void)
     case AUTO_DETECT_LEFT_ENCODER:
         if(RuntimeControl_VescPollSensorDetect(true,MOTOR_SENSOR_ENCODER_AB,&res)){
             if(res.state!=ESC_SENSOR_CAL_SUCCESS){auto_detect.stage=AUTO_DETECT_REPLY;break;}
-            if(RuntimeControl_VescStartSensorDetect(false,MOTOR_SENSOR_HALL_UVW,detect_current_internal(true,0.5f)))
+            if(RuntimeControl_VescStartSensorDetect(false,MOTOR_SENSOR_HALL_UVW,detect_current_internal(true,VESC_AUTO_DETECT_CURRENT_A)))
                 auto_detect.stage=AUTO_DETECT_RIGHT_HALL;
             else auto_detect.stage=AUTO_DETECT_REPLY;
         }
@@ -1324,7 +1325,7 @@ static void fw_version(bool r)
     o[i++]=0; /* qml hw */
     o[i++]=0; /* qml app */
     o[i++]=0; /* nrf flags */
-    if(!fw_append_cstr(o,sizeof(o),&i,"hoverboard-vesc6-v20")) return;
+    if(!fw_append_cstr(o,sizeof(o),&i,"hoverboard-vesc6-v21")) return;
     send_payload(o,(uint16_t)i);
 }
 

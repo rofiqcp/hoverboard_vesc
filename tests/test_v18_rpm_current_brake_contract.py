@@ -59,7 +59,7 @@ assert 'mode == ESC_MODE_OPEN || mode == ESC_MODE_HANDBRAKE' in runtime
 # 7) Tester proves distinct core modes and moving brake-current polarity.
 assert 'expected_core_mode = 4 if kind == "brake" else 5' in tester
 assert 'brake Iq did not oppose speed' in tester
-assert 'TESTER_RELEASE = "V20"' in tester
-assert 'hoverboard-vesc6-v20' in proto
+assert 'TESTER_RELEASE = "V21"' in tester
+assert 'hoverboard-vesc6-v21' in proto
 
 print('V18_RPM_CURRENT_BRAKE_CONTRACT_PASS')

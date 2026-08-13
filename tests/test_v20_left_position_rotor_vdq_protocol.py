@@ -5,7 +5,7 @@ runtime=(root/'Src/runtime_control.c').read_text()
 assert 'uint8_t o[128]' in proto
 assert 'uint8_t out[512]' in proto, 'HBTS v15 payload needs >448-byte safe buffer'
 assert 'fw_append_cstr' in proto
-assert 'hoverboard-vesc6-v20' in proto
+assert 'hoverboard-vesc6-v21' in proto
 assert 'avg_vd_mv' in proto and 'avg_vq_mv' in proto
 assert 'foc_mod_q14_to_mv' in proto
 assert 'if(mask&(1UL<<19))vesc_buf_append_float32(out,(float)avg_vd_mv/1000.0f,1000,&i);' in proto

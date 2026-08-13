@@ -20,3 +20,11 @@ V21 is a corrective release based on V20 and the 2026-08-13 hardware log.
 
 ## Hardware validation required
 Run the V21 full tester on real hardware. In particular, a LEFT encoder detect that cannot physically follow the forced field should now fail instead of returning fallback ratio 15; increase detection current only within the board/motor safe range if required.
+
+## Hardware correction — 2026-08-13 17:49 run
+- Fixed encoder retry state: a failed +3/-3 sweep now restarts at + electrical direction instead of continuing reverse-only until timeout.
+- Rebased per-window encoder transition counters on retry while preserving transaction-wide clean-edge/state evidence.
+- Encoder ratio inference now accepts the stronger valid net displacement from either forward or reverse half-sweep, useful when steering starts against one mechanical stop.
+- Integrated LEFT encoder / RIGHT Hall commissioning uses 1.00 A instead of 0.50 A; individual detect remains user-selectable and hard-capped by the existing 2 A safety limit.
+- Full tester now checks Rotor Position with upstream VESC `COMM_SET_DETECT` streaming semantics instead of treating `COMM_ROTOR_POSITION` as a request.
+- Firmware/tester release identity updated to V21.

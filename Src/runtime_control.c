@@ -722,9 +722,21 @@ static bool sensor_cal_auto_candidate_ready(MotorRuntimeConfig *cfg,
          * physically follows the rotating field, this remains the preferred
          * automatic result. */
         if (candidate.encoder_cpr < MOTOR_ENCODER_CPR_MIN) return false;
-        int64_t raw_delta = (int64_t)sensorCal.encoder_forward_delta;
-        if (sensorCal.original_sensor_inverted) raw_delta = -raw_delta;
-        const uint64_t mag = (uint64_t)(raw_delta < 0 ? -raw_delta : raw_delta);
+        /* V21 hardware log 17:49: a steering motor can begin against one hard
+         * stop. Use whichever commanded half-sweep produced the larger NET encoder
+         * displacement. Reverse evidence is sign-normalized so positive always
+         * means raw encoder follows positive commanded electrical rotation. */
+        int64_t raw_forward = (int64_t)sensorCal.encoder_forward_delta;
+        const int64_t total_delta = (int64_t)state->position_ticks - (int64_t)sensorCal.encoder_start;
+        int64_t raw_reverse = total_delta - (int64_t)sensorCal.encoder_forward_delta;
+        if (sensorCal.original_sensor_inverted) {
+            raw_forward = -raw_forward;
+            raw_reverse = -raw_reverse;
+        }
+        const uint64_t mag_forward = (uint64_t)(raw_forward < 0 ? -raw_forward : raw_forward);
+        const uint64_t mag_reverse = (uint64_t)(raw_reverse < 0 ? -raw_reverse : raw_reverse);
+        const int64_t normalized_delta = (mag_reverse > mag_forward) ? -raw_reverse : raw_forward;
+        const uint64_t mag = (uint64_t)(normalized_delta < 0 ? -normalized_delta : normalized_delta);
         const uint32_t cycles = SENSOR_CAL_ENCODER_FORWARD_SWEEPS;
         const uint64_t numerator = (uint64_t)cycles * (uint64_t)candidate.encoder_cpr;
 
@@ -739,7 +751,7 @@ static bool sensor_cal_auto_candidate_ready(MotorRuntimeConfig *cfg,
                 if (error <= tolerance) {
                     sensorCal.detected_pole_pairs = (uint8_t)pp;
                     if (!sensorCal.encoder_direction_proved)
-                        sensorCal.detected_encoder_inverted = raw_delta < 0 ? 1U : 0U;
+                        sensorCal.detected_encoder_inverted = normalized_delta < 0 ? 1U : 0U;
                     sensorCal.encoder_ratio_fallback_used = false;
                     return true;
                 }
@@ -1697,17 +1709,20 @@ static void sensor_cal_service(uint32_t now, uint32_t dt_ms)
             if (sensor_cal_auto_candidate_ready(cfg, state)) {
                 sensor_cal_finish(ESC_SENSOR_CAL_SUCCESS, 0U);
             } else {
-                /* V15: restart only the displacement window. Keep cumulative A/B
-                 * transition evidence and the session edge baseline; otherwise a
-                 * clean loaded encoder can dither through many valid edges yet
-                 * never satisfy a per-window proof threshold. */
-                sensorCal.completed_cycles = 0U;
+                /* V21: every retry is a complete +3/-3 electrical sweep again.
+                 * The 17:49 trace proved V20/V21-pre left sweep_direction=-1 after
+                 * the first failed window, creating reverse-only retries. Reset the
+                 * per-window transition counters/direction snapshot while keeping
+                 * transaction-wide valid-edge and seen-state evidence intact. */
+                const bool motion_seen = sensorCal.motion_detected;
+                sensor_cal_reset_capture_tables(state, sample, false);
+                sensorCal.motion_detected = motion_seen;
+                sensorCal.sweep_direction = 1;
                 sensorCal.forward_cycles = 0U;
                 sensorCal.reverse_cycles = 0U;
                 sensorCal.phase_q4 = 0;
-                sensorCal.encoder_start = state->position_ticks;
-                /* Keep encoder_session_* baselines from transaction start. Only
-                 * the displacement origin moves to the next sweep window. */
+                /* encoder_session_* baselines and encoder_session_seen_mask are
+                 * intentionally NOT reset by the per-window helper. */
                 sensorCal.last_motion_position = (int32_t)sensor_cal_motion_counter(
                     state, MOTOR_SENSOR_ENCODER_AB);
                 sensorCal.last_motion_tick = now;

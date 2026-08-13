@@ -44,8 +44,8 @@ assert '} else if (battery_lvl1_qualified) {' in main
 
 # 4) Protocol stays wire-compatible with VESC 6.00; V15 keeps the V14 Hall/encoder fixes.
 assert '#define VESC_FW_MAJOR 6U' in protocol and '#define VESC_FW_MINOR 0U' in protocol
-assert 'hoverboard-vesc6-v20' in protocol
-assert 'TESTER_RELEASE = "V20"' in tester
+assert 'hoverboard-vesc6-v21' in protocol
+assert 'TESTER_RELEASE = "V21"' in tester
 
 # 5) Fixed-point Hall finalizer must reuse Q14 LUT; no atan2/libm was introduced
 # into runtime commissioning.

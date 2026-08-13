@@ -89,6 +89,6 @@ assert 'sensorCal.encoder_forward_delta = state->position_ticks - sensorCal.enco
 # of declaring failure at the edge of the old 0.9 s window.
 assert 'first-command encoder alignment still busy; extending same SET by 1.2 s' in tester
 
-assert 'hoverboard-vesc6-v20' in protocol
-assert 'TESTER_RELEASE = "V20"' in tester
+assert 'hoverboard-vesc6-v21' in protocol
+assert 'TESTER_RELEASE = "V21"' in tester
 print('V17_UNITS_CONFIG_SPEED_CONTRACT_PASS')

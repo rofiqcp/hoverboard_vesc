@@ -34,6 +34,6 @@ assert isr.index('MotorSensor_Update(&motorConfigRight') < isr.index('if (motorI
 loop = main[main.index('for (;;)'):]
 assert loop.index('VescProtocol_Service();') < loop.index('RuntimeControl_UpdateSlow(dt_ms);')
 # Firmware/tester identity proves the correct binary/log pair.
-assert 'hoverboard-vesc6-v20' in vesc
-assert 'TESTER_RELEASE = "V20"' in tester
+assert 'hoverboard-vesc6-v21' in vesc
+assert 'TESTER_RELEASE = "V21"' in tester
 print('V16_SERIAL_LIVENESS_CONTRACT_PASS')
