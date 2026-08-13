@@ -19,9 +19,18 @@ def test_full_brake_is_sensor_independent_but_stop_is_release():
 
 def test_f103_full_brake_uses_low_side_zero_vector_per_motor():
     assert 'left_full_brake' in motor and 'right_full_brake' in motor
-    assert 'if (left_full_brake && left_domain_ready) set_current_zero_vector_left();' in motor
-    assert 'if (right_full_brake && right_domain_ready) set_current_zero_vector_right();' in motor
+    assert 'left_low_side_brake = left_full_brake || left_current_brake_short' in motor
+    assert 'right_low_side_brake = right_full_brake || right_current_brake_short' in motor
+    assert 'if (left_low_side_brake && left_domain_ready) set_current_zero_vector_left();' in motor
+    assert 'if (right_low_side_brake && right_domain_ready) set_current_zero_vector_right();' in motor
     assert 'Do not let centered SVPWM overwrite the all-low-side short.' in motor
+
+def test_current_brake_near_zero_uses_same_low_side_short():
+    assert 'left_current_brake_short' in motor and 'right_current_brake_short' in motor
+    assert 'motorSensorSampleLeft.mechanical_speed_q4 > -32' in motor
+    assert 'motorSensorSampleRight.mechanical_speed_q4 > -32' in motor
+    assert 'left_low_side_brake = left_full_brake || left_current_brake_short' in motor
+    assert 'right_low_side_brake = right_full_brake || right_current_brake_short' in motor
 
 def test_dma_architecture_remains_dual_sensor_16k_interleaved_foc():
     assert 'MotorSensor_UpdateHardwareEncoder(&motorConfigLeft' in motor

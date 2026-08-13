@@ -895,6 +895,23 @@ void DMA1_Channel1_IRQHandler(void)
         motorLeft.m_duty_cycle_set_q15 == 0;
     const bool right_full_brake = motorRight.m_control_mode == CONTROL_MODE_DUTY &&
         motorRight.m_duty_cycle_set_q15 == 0;
+    /* Upstream VESC FOC shorts the phases at equal/zero duty when
+     * foc_short_ls_on_zero_duty is enabled, explicitly to avoid dead-time
+     * distortion and increase braking torque at low speed. Our current-brake
+     * loop already defines a 2 mechanical RPM deadband; use the board's proven
+     * all-low-side zero vector inside that deadband instead of alternating Iq
+     * sign or leaving centered SVPWM at standstill. Feedback is still required
+     * for CURRENT_BRAKE; only DUTY(0) itself is sensor-independent. */
+    const bool left_current_brake_short =
+        motorLeft.m_control_mode == CONTROL_MODE_CURRENT_BRAKE &&
+        motorLeft.m_iq_set != 0 && motorSensorSampleLeft.feedback_valid != 0U &&
+        motorSensorSampleLeft.mechanical_speed_q4 > -32 && motorSensorSampleLeft.mechanical_speed_q4 < 32;
+    const bool right_current_brake_short =
+        motorRight.m_control_mode == CONTROL_MODE_CURRENT_BRAKE &&
+        motorRight.m_iq_set != 0 && motorSensorSampleRight.feedback_valid != 0U &&
+        motorSensorSampleRight.mechanical_speed_q4 > -32 && motorSensorSampleRight.mechanical_speed_q4 < 32;
+    const bool left_low_side_brake = left_full_brake || left_current_brake_short;
+    const bool right_low_side_brake = right_full_brake || right_current_brake_short;
     const bool left_phase_valid = left_calibration || left_open || left_full_brake ||
         motorLeft.m_control_mode == CONTROL_MODE_HANDBRAKE ||
         motorSensorSampleLeft.feedback_valid != 0U;
@@ -919,8 +936,8 @@ void DMA1_Channel1_IRQHandler(void)
      * line-to-line voltage is zero and the motor is electrically shorted. This
      * mirrors VESC foc_short_ls_on_zero_duty/full_brake_hw without adding any
      * floating point or extra control loop to the 16-kHz DMA ISR. */
-    if (left_full_brake && left_domain_ready) set_current_zero_vector_left();
-    if (right_full_brake && right_domain_ready) set_current_zero_vector_right();
+    if (left_low_side_brake && left_domain_ready) set_current_zero_vector_left();
+    if (right_low_side_brake && right_domain_ready) set_current_zero_vector_right();
 
     /* Emergency liveness fallback is evaluated AFTER both sensors were sampled.
      * It only skips one FOC slot if even the one-motor interleaved path previously
@@ -934,7 +951,7 @@ void DMA1_Channel1_IRQHandler(void)
     const bool run_right_slot = motorFocSlotRight;
     motorFocSlotRight = !motorFocSlotRight;
     if (!run_right_slot) {
-        if (left_full_brake && left_domain_ready) {
+        if (left_low_side_brake && left_domain_ready) {
             /* Do not let centered SVPWM overwrite the all-low-side short. */
             motorOutputLeft.duty_a = 0;
             motorOutputLeft.duty_b = 0;
@@ -958,7 +975,7 @@ void DMA1_Channel1_IRQHandler(void)
         commissioningFastStreakLeft = 0U;
         }
     } else {
-        if (right_full_brake && right_domain_ready) {
+        if (right_low_side_brake && right_domain_ready) {
             /* RIGHT is independently shorted; LEFT state is untouched. */
             motorOutputRight.duty_a = 0;
             motorOutputRight.duty_b = 0;

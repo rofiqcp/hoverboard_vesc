@@ -35,3 +35,4 @@ Run the V21 full tester on real hardware. In particular, a LEFT encoder detect t
 - Implemented VESC Full Brake semantics on STM32F103 hoverboard hardware: `SET_DUTY(0)` keeps only the selected bridge active and asserts the validated all-low-side zero vector; `SET_CURRENT(0)` remains Stop/release with MOE off.
 - Full Brake bypasses sensor-angle readiness because the hardware short does not use rotor phase. Normal Duty/Current/RPM/Position/Current-Brake still require the selected side's valid feedback proof.
 - Added explicit LEFT/RIGHT Full-Brake→Stop hardware tests and regression contracts while preserving 16-kHz dual-sensor sampling and 8-kHz-per-motor interleaved FOC.
+- CURRENT_BRAKE inside the existing ±2 mechanical RPM deadband now uses the same all-low-side hardware short, matching VESC low-speed short semantics and preventing Hall sign chatter/freewheel at standstill.
