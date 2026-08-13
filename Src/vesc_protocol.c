@@ -981,14 +981,6 @@ static float phase_deg_q16(uint16_t phase)
     return ((float)phase * 360.0f) / 65536.0f;
 }
 
-static float angle_diff_deg(float a, float b)
-{
-    float d = a - b;
-    while (d > 180.0f) d -= 360.0f;
-    while (d < -180.0f) d += 360.0f;
-    return d;
-}
-
 static bool rotor_position_value(bool right, uint8_t mode, float *value)
 {
     if (value == NULL) return false;
