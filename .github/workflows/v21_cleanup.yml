@@ -1,0 +1,73 @@
+name: V21 cleanup and warning-free validation
+
+on:
+  push:
+    branches: [v21]
+    paths:
+      - '.github/workflows/v21_cleanup.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup-test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v21
+          fetch-depth: 0
+
+      - name: Clean generated files and unused warning
+        run: |
+          rm -rf tests/__pycache__
+          cat > .gitignore <<'EOF'
+          __pycache__/
+          *.py[cod]
+          .pytest_cache/
+          .pio/
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Src/vesc_protocol.c')
+          s = p.read_text()
+          old = '''static float angle_diff_deg(float a, float b)
+          {
+              float d = a - b;
+              while (d > 180.0f) d -= 360.0f;
+              while (d < -180.0f) d += 360.0f;
+              return d;
+          }
+
+          '''
+          if s.count(old) != 1:
+              raise SystemExit(f'angle_diff_deg cleanup expected one match, got {s.count(old)}')
+          p.write_text(s.replace(old, '', 1))
+          PY
+
+      - name: Install test/build dependencies
+        run: python3 -m pip install --disable-pip-version-check pytest platformio
+
+      - name: Regression suite
+        run: python3 -m pytest -q
+
+      - name: Warning-free STM32 build
+        run: |
+          set -o pipefail
+          pio run -e esc 2>&1 | tee /tmp/v21_build.log
+          if grep -E '(^|: )[Ww]arning:' /tmp/v21_build.log; then
+            echo 'Compiler warning detected; refusing V21 cleanup commit.'
+            exit 1
+          fi
+
+      - name: Commit cleanup
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No cleanup changes.'
+          else
+            git commit -m 'V21: clean generated files and remove final compiler warning'
+            git push origin HEAD:v21
+          fi
