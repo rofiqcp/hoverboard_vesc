@@ -46,7 +46,7 @@ enum {
 };
 
 #define RX_DMA_SIZE 1024U
-#define TX_QUEUE_DEPTH 6U
+#define TX_QUEUE_DEPTH 8U
 #define VESC_FW_MAJOR 6U
 #define VESC_FW_MINOR 0U
 #define UART_OVERRIDE_MS 300U
@@ -1041,6 +1041,9 @@ static bool send_rotor_position(bool right, uint8_t mode)
 
 static void rotor_position_stream_service(void)
 {
+    /* Request/reply traffic (GET_MCCONF is ~482 B) always wins over optional
+     * 100-Hz rotor streaming. This prevents long VESC Tool reads from timing out. */
+    if (tx_queue_used() >= 2U) return;
     const uint32_t now=RuntimeControl_MonotonicMs();
     if(display_position_mode_left!=0U && (uint32_t)(now-display_position_last_left_ms)>=10U){
         if(send_rotor_position(false,display_position_mode_left))display_position_last_left_ms=now;
@@ -1347,7 +1350,7 @@ static void fw_version(bool r)
     o[i++]=0; /* qml hw */
     o[i++]=0; /* qml app */
     o[i++]=0; /* nrf flags */
-    if(!fw_append_cstr(o,sizeof(o),&i,"hoverboard-vesc6-v22")) return;
+    if(!fw_append_cstr(o,sizeof(o),&i,"hoverboard-vesc6-v23")) return;
     send_payload(o,(uint16_t)i);
 }
 
@@ -1385,7 +1388,11 @@ static void process_ctx(const uint8_t*p,uint16_t n,const vesc_motor_ctx_t *ctx){
  case C_ROTOR_POSITION:(void)send_rotor_position(r,r?display_position_mode_right:display_position_mode_left);break;
  case C_GET_DECODED_ADC:{uint8_t o[17];int32_t k=0;o[k++]=C_GET_DECODED_ADC;vesc_buf_append_i32(o,VescApp_GetDecoded1Micro(),&k);vesc_buf_append_i32(o,VescApp_GetVoltage1MicroV(),&k);vesc_buf_append_i32(o,VescApp_GetDecoded2Micro(),&k);vesc_buf_append_i32(o,VescApp_GetVoltage2MicroV(),&k);send_payload(o,(uint16_t)k);}break;
  case C_GET_MCCONF:case C_GET_MCCONF_DEFAULT:{uint8_t o[VESC_PACKET_MAX_PAYLOAD];o[0]=cmd;int32_t k=VescConfig_SerializeMc(o+1,r,cmd==C_GET_MCCONF_DEFAULT);if(k>0)send_payload(o,(uint16_t)(k+1));}break;
- case C_SET_MCCONF:{(void)VescConfig_DeserializeMc(d,l,r,true);uint8_t o[1]={C_SET_MCCONF};send_payload(o,1);}break;
+ case C_SET_MCCONF:{
+     /* Never ACK a rejected/truncated mcconf. VESC Tool interprets an ACK as an
+      * applied configuration and may immediately start using dangerous tuning. */
+     if(VescConfig_DeserializeMc(d,l,r,true)){uint8_t o[1]={C_SET_MCCONF};send_payload(o,1);}
+ }break;
  case C_GET_APPCONF:case C_GET_APPCONF_DEFAULT:{uint8_t o[VESC_PACKET_MAX_PAYLOAD];o[0]=cmd;int32_t k=VescConfig_SerializeApp(o+1,r,cmd==C_GET_APPCONF_DEFAULT);if(k>0)send_payload(o,(uint16_t)(k+1));}break;
  case C_SET_APPCONF:{if(VescConfig_DeserializeApp(d,l,r,true)){uint8_t o[1]={C_SET_APPCONF};send_payload(o,1);}}break;
  case C_CUSTOM_APP_DATA:custom_app_data(d,l,r);break;
@@ -1401,7 +1408,14 @@ static void process_ctx(const uint8_t*p,uint16_t n,const vesc_motor_ctx_t *ctx){
 
 static void rx_cb(const uint8_t*p,uint16_t n){++rx_packets;process_ctx(p,n,&vesc_ctx_left);}
 void VescProtocol_Init(void){VescPacket_Init(&parser);memset(rx_dma,0,sizeof(rx_dma));rx_old=0;tx_head=tx_tail=0;tx_busy=false;if(!protocol_initialized){pending_detect.active=false;auto_detect.active=false;display_position_mode_left=display_position_mode_right=0U;protocol_initialized=true;}DMA1_Channel2->CCR&=~DMA_CCR_EN;DMA1->IFCR=DMA_IFCR_CGIF2;DMA1_Channel2->CPAR=(uint32_t)(uintptr_t)&USART3->DR;DMA1_Channel2->CNDTR=0;DMA1_Channel2->CCR=DMA_CCR_DIR|DMA_CCR_MINC|DMA_CCR_TCIE|DMA_CCR_TEIE;DMA1_Channel3->CCR&=~DMA_CCR_EN;DMA1->IFCR=DMA_IFCR_CGIF3;DMA1_Channel3->CPAR=(uint32_t)(uintptr_t)&USART3->DR;DMA1_Channel3->CMAR=(uint32_t)(uintptr_t)rx_dma;DMA1_Channel3->CNDTR=RX_DMA_SIZE;DMA1_Channel3->CCR=DMA_CCR_MINC|DMA_CCR_CIRC;SET_BIT(USART3->CR3,USART_CR3_DMAR);DMA1_Channel3->CCR|=DMA_CCR_EN;}
-void VescProtocol_Service(void){uint32_t f=DMA1->ISR;if(tx_busy&&(f&(DMA_ISR_TCIF2|DMA_ISR_TEIF2)))VescProtocol_TxDmaIrqHandler();if((f&DMA_ISR_TEIF3)||(DMA1_Channel3->CCR&DMA_CCR_EN)==0){++crc_or_parser_errors;VescProtocol_Init();return;}detect_service();auto_detect_service();uint16_t pos=(uint16_t)(RX_DMA_SIZE-DMA1_Channel3->CNDTR);while(rx_old!=pos){VescPacket_Feed(&parser,rx_dma[rx_old],rx_cb);rx_old++;if(rx_old>=RX_DMA_SIZE)rx_old=0;}detect_service();auto_detect_service();rotor_position_stream_service();tx_start_next();}
+void VescProtocol_Service(void){uint32_t f=DMA1->ISR;if(tx_busy&&(f&(DMA_ISR_TCIF2|DMA_ISR_TEIF2)))VescProtocol_TxDmaIrqHandler();if((f&DMA_ISR_TEIF3)||(DMA1_Channel3->CCR&DMA_CCR_EN)==0){
+    ++crc_or_parser_errors;
+    /* A broken UART/DMA path must fail torque OFF, not leave the last command
+     * active until the normal application watchdog expires. */
+    RuntimeControl_VescReleaseAll();
+    VescProtocol_Init();
+    return;
+}detect_service();auto_detect_service();uint16_t pos=(uint16_t)(RX_DMA_SIZE-DMA1_Channel3->CNDTR);while(rx_old!=pos){VescPacket_Feed(&parser,rx_dma[rx_old],rx_cb);rx_old++;if(rx_old>=RX_DMA_SIZE)rx_old=0;}detect_service();auto_detect_service();rotor_position_stream_service();tx_start_next();}
 void VescProtocol_AdcSetNormalized(int16_t p,bool speed){
     uint32_t now=RuntimeControl_MonotonicMs();
     if((uint32_t)(now-last_uart_control_ms)<UART_OVERRIDE_MS)return;

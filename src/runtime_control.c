@@ -1601,11 +1601,26 @@ static bool sensor_cal_service_vesc_encoder_probe(uint32_t now, uint32_t dt_ms,
             const bool quadrature_ok = valid_edges >= 8U &&
                 invalid_edges <= (2U + valid_edges / 16U);
 
-            if (sequence_ok && ratio_ok && direction_ok && quadrature_ok && enough) {
-                sensorCal.detected_pole_pairs = ratio;
+            /* ABI direction/quadrature proof is independent from the coarse
+             * electrical-ratio estimate. On the captured board the four 120-deg
+             * probes produced 0 normal vs 364 inverted counts and zero invalid
+             * quadrature transitions, but rounding yielded ratio 14 while the
+             * physical motor is configured as 15 pole-pairs. Treat a +/-1 probe
+             * estimate as validation of the authoritative motor pole count. */
+            if (direction_ok && quadrature_ok) sensorCal.encoder_direction_proved = true;
+            const MotorRuntimeConfig *active_cfg = sensor_cal_config(sensorCal.motor);
+            uint8_t configured_pp = active_cfg != NULL ? active_cfg->encoder_ratio : 0U;
+            if (configured_pp == 0U) configured_pp = sensorCal.motor == ESC_MOTOR_LEFT ? motorConfLeft.foc_motor_pole_pairs : motorConfRight.foc_motor_pole_pairs;
+            const uint8_t ratio_err = ratio > configured_pp ? (uint8_t)(ratio - configured_pp) :
+                                                        (uint8_t)(configured_pp - ratio);
+            const bool ratio_near_config = configured_pp >= 1U && configured_pp <= SENSOR_CAL_VESC_POLE_PAIRS_MAX &&
+                                           ratio >= 1U && ratio_err <= 1U;
+
+            if (sequence_ok && direction_ok && quadrature_ok && enough && (ratio_ok || ratio_near_config)) {
+                sensorCal.detected_pole_pairs = ratio_near_config ? configured_pp : ratio;
                 sensorCal.detected_encoder_inverted = inverted > normal ? 1U : 0U;
                 sensorCal.encoder_direction_proved = true;
-                sensorCal.encoder_ratio_fallback_used = false;
+                sensorCal.encoder_ratio_fallback_used = ratio_near_config && ratio != configured_pp;
                 sensorCal.encoder_delta = state->position_ticks - sensorCal.encoder_start;
                 sensor_cal_finish(ESC_SENSOR_CAL_SUCCESS, 0U);
             } else if (exhausted) {
@@ -2573,7 +2588,10 @@ static bool prearm_feedback_not_ready(uint8_t mode, int32_t target,
      * the normal VESC DUTY control state at zero modulation; static low-side
      * shorting is only a separate foc_short_ls_on_zero_duty policy upstream and
      * must not bypass this board's proven sensored FOC/ADC path. */
-    (void)target;
+    /* Zero-duty is VESC Tool Full Brake control state. It commands zero
+     * modulation and must be enterable even when an ABI phase-alignment job is
+     * pending; Stop remains COMM_SET_CURRENT(0) and fully releases the bridge. */
+    if (mode == ESC_MODE_DUTY && target == 0) return false;
     if (mode == ESC_MODE_OPEN || mode == ESC_MODE_HANDBRAKE) return false;
     if (cfg == NULL || sample == NULL) return true;
     if (cfg->sensor_type == MOTOR_SENSOR_HALL_UVW) {
@@ -3296,17 +3314,16 @@ static void apply_runtime_target_one(bool left, uint8_t mode, int32_t host_setpo
          * error when motor_inverted was enabled. */
         motor->m_pos_pid_set = target_host;
         int16_t iq = mc_foc_run_pid_control_pos(motor, dt_ms);
-        if (cfg->sensor_type == MOTOR_SENSOR_HALL_UVW) {
-            /* One Hall sector is about 4 mechanical degrees at 15 pole-pairs.
-             * Limit the coarse Hall position loop to 1 A so one sector of error
-             * cannot command the full 15-A current limit. Encoder POS is not
-             * affected. */
-            int16_t hall_cap = (int16_t)CONTROL_CURRENT_INTERNAL_PER_A;
-            if (hall_cap > conf->l_current_max) hall_cap = conf->l_current_max;
-            if (iq > hall_cap) iq = hall_cap;
-            if (iq < -hall_cap) iq = (int16_t)-hall_cap;
-            motor->m_iq_set = iq;
-        }
+        /* Bench-safe POSITION torque ceiling for BOTH Hall and ABI. A position
+         * command is an outer loop and must never turn a bad phase reference or
+         * tuning value into a multi-amp stall. One amp is sufficient for the
+         * 15-degree validation step; VESC current limits still remain the outer
+         * absolute limit. */
+        int16_t pos_cap = (int16_t)CONTROL_CURRENT_INTERNAL_PER_A;
+        if (pos_cap > conf->l_current_max) pos_cap = conf->l_current_max;
+        if (iq > pos_cap) iq = pos_cap;
+        if (iq < -pos_cap) iq = (int16_t)-pos_cap;
+        motor->m_iq_set = iq;
         *runtime_command = iq_to_host_permille(cfg, conf, iq);
         return;
     }

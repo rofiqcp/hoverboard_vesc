@@ -418,9 +418,19 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
     i += 2; for (uint8_t n = 0; n < 4U; ++n) (void)get_f16(b, n < 2U ? 100.0f : 1000.0f, &i); i += 1;
     if (i != (int32_t)VESC6_MCCONF_WIRE_SIZE) return false;
 
+    /* Reject non-finite/hostile live tuning before it can reach the FOC ISR.
+     * Upstream VESC has had position-parameter values capable of hanging an ISR;
+     * this port never applies NaN/Inf or unbounded loop gains. */
     if (!isfinite(current_max) || !isfinite(current_min) || !isfinite(erpm_max) ||
         !isfinite(current_kp) || !isfinite(current_ki) || !isfinite(encoder_ratio) ||
-        !isfinite(gear_ratio_wire)) return false;
+        !isfinite(gear_ratio_wire) || !isfinite(s_kp) || !isfinite(s_ki) ||
+        !isfinite(s_kd) || !isfinite(s_kd_filter) || !isfinite(s_min_erpm) ||
+        !isfinite(s_ramp) || !isfinite(p_kp) || !isfinite(p_ki) ||
+        !isfinite(p_kd) || !isfinite(p_kd_proc) || !isfinite(p_kd_filter)) return false;
+    if (fabsf(current_kp) > 1000.0f || fabsf(current_ki) > 100000.0f ||
+        fabsf(s_kp) > 1000.0f || fabsf(s_ki) > 100000.0f || fabsf(s_kd) > 1000.0f ||
+        fabsf(p_kp) > 1000.0f || fabsf(p_ki) > 100000.0f || fabsf(p_kd) > 1000.0f ||
+        fabsf(p_kd_proc) > 1000.0f) return false;
     if (motor_poles_wire < 2U || motor_poles_wire > 120U || (motor_poles_wire & 1U) != 0U) {
         /* VESC's si_motor_poles is total magnetic poles. This fixed-point core
          * intentionally supports an integer pole-pair count, so odd total-pole

@@ -34,7 +34,7 @@ import traceback
 from typing import Any, Callable, Optional
 
 # VESC 6.00 command IDs used by this firmware.
-TESTER_RELEASE = "V22"
+TESTER_RELEASE = "V23"
 
 COMM_FW_VERSION = 0
 COMM_GET_VALUES = 4
@@ -1196,6 +1196,41 @@ class SerialVesc:
         self.parser = StreamParser()
         self.local_id: Optional[int] = None
         self.right_id: Optional[int] = None
+        self.port = port
+        self.baud = baud
+
+    def emergency_recover(self, reason: str = "serial fault", attempts: int = 20) -> bool:
+        """Fail-safe recovery after USB/UART reset: reopen and command BOTH sides Stop."""
+        self.log.log("WARN", f"EMERGENCY SERIAL RECOVERY: {reason}")
+        try:
+            # Best effort while old handle is still alive.
+            for node in ("local", "right"):
+                if node == "right" and self.right_id is None: continue
+                for _ in range(2):
+                    try: self.stop(node)
+                    except Exception: break
+        except Exception:
+            pass
+        try: self.ser.close()
+        except Exception: pass
+        for _ in range(attempts):
+            time.sleep(0.20)
+            try:
+                self.ser = self.serial_mod.Serial(port=self.port, baudrate=self.baud,
+                                                  timeout=0.02, write_timeout=1.0)
+                self.parser.reset()
+                time.sleep(0.12)
+                for node in ("local", "right"):
+                    if node == "right" and self.right_id is None: continue
+                    for _ in range(4):
+                        self.stop(node); time.sleep(0.025)
+                self.log.log("INFO", "Serial reconnected; STOP confirmed sent to both motor contexts")
+                return True
+            except Exception:
+                try: self.ser.close()
+                except Exception: pass
+        self.log.log("ERROR", "Serial did not recover; physical power/E-stop is required before continuing")
+        return False
 
     def close(self) -> None:
         self.ser.close()
@@ -1427,6 +1462,12 @@ class TestSuite:
         except Exception as exc:
             tb = traceback.format_exc()
             (self.log.root / "exceptions.log").open("a", encoding="utf-8").write(f"\n=== {name} {now_iso()} ===\n{tb}\n")
+            # USB reset / EIO is itself a motor-safety event. Reconnect only to
+            # transmit STOP; do not silently retry the failed motion command.
+            if self.dev is not None and (isinstance(exc, (TimeoutError, OSError)) or
+                                         "Serial" in type(exc).__name__ or "Input/output" in str(exc)):
+                try: self.dev.emergency_recover(f"{name}: {type(exc).__name__}: {exc}")
+                except Exception: pass
             r = TestResult(name, "FAIL", started, time.monotonic() - start, error=f"{type(exc).__name__}: {exc}")
             self.log.add_result(r); return None
 
@@ -2614,10 +2655,10 @@ class TestSuite:
                     if position_guard_start_deg is None:
                         position_guard_start_deg = pnow
                         position_guard_start_t = now
-                    elif now - position_guard_start_t >= 0.60:
+                    elif now - position_guard_start_t >= 0.25:
                         moved = abs(pnow - position_guard_start_deg)
                         iq_abs = abs(float(vt.get("iq_A") or 0.0))
-                        if moved < 1.0 and iq_abs >= 3.0:
+                        if moved < 1.0 and iq_abs >= 0.8:
                             expected_cmd, expected_raw = self._set_wire_expectation(kind, value)
                             self.log.command_trace({
                                 "timestamp": now_iso(), "scope": "position_stall_abort",
@@ -2641,7 +2682,7 @@ class TestSuite:
                                 self.dev.stop(node); time.sleep(0.02)
                             raise AssertionError(
                                 f"{node} POSITION_STALL_OR_PHASE_REFERENCE_FAILURE: Iq={iq_abs:.2f}A "
-                                f"but position moved only {moved:.2f}deg in >=0.6s; released immediately")
+                                f"but position moved only {moved:.2f}deg in >=0.25s; released immediately")
 
                 # V17 fail-fast speed-direction guard. COMM_SET_RPM is electrical
                 # RPM. If a clearly moving motor reports the opposite sign from
