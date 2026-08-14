@@ -75,5 +75,7 @@ int32_t VescApp_GetVoltage1MicroV(void);
 int32_t VescApp_GetVoltage2MicroV(void);
 bool VescApp_UartEnabled(void);
 bool VescApp_AdcControlSupported(uint8_t control_type);
+bool VescApp_RangeOk(void);
+bool VescApp_SafeStartOk(void);
 
 #endif /* VESC_APP_H */

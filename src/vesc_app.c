@@ -1,8 +1,10 @@
 #include "vesc_app.h"
 #include "defines.h"
 #include "vesc_protocol.h"
+#include "runtime_control.h"
 #include <limits.h>
 #include <stddef.h>
+#include <math.h>
 
 extern volatile adc_buf_t adc_buffer;
 
@@ -12,6 +14,8 @@ static int32_t filtered1_q15 = 0;
 static int32_t filtered2_q15 = 0;
 static int16_t ramped_permille = 0;
 static bool safe_start_ok = false;
+static bool adc_range_ok = true;
+static uint32_t safe_start_neutral_ms = 0U;
 static uint8_t previous_app_mode = 0xFFU;
 static uint8_t previous_control_type = 0xFFU;
 
@@ -70,6 +74,38 @@ static int16_t ramp_permille(int16_t current, int16_t target,
     return (int16_t)clamp32(next, -1000, 1000);
 }
 
+/* Semantic match to vedderb/bldc util/utils_math.c::utils_throttle_curve(). */
+static float throttle_curve(float val, float curve_acc, float curve_brake, int mode)
+{
+    if (val < -1.0f) val = -1.0f;
+    if (val > 1.0f) val = 1.0f;
+
+    const float val_a = fabsf(val);
+    const float curve = val >= 0.0f ? curve_acc : curve_brake;
+    float ret;
+
+    if (mode == 0) { /* Exponential */
+        if (curve >= 0.0f) ret = 1.0f - powf(1.0f - val_a, 1.0f + curve);
+        else ret = powf(val_a, 1.0f - curve);
+    } else if (mode == 1) { /* Natural */
+        if (fabsf(curve) < 1e-10f) {
+            ret = val_a;
+        } else if (curve >= 0.0f) {
+            ret = 1.0f - ((expf(curve * (1.0f - val_a)) - 1.0f) /
+                          (expf(curve) - 1.0f));
+        } else {
+            ret = (expf(-curve * val_a) - 1.0f) / (expf(-curve) - 1.0f);
+        }
+    } else if (mode == 2) { /* Polynomial */
+        if (curve >= 0.0f) ret = 1.0f - ((1.0f - val_a) / (1.0f + curve * val_a));
+        else ret = val_a / (1.0f - curve * (1.0f - val_a));
+    } else { /* Linear */
+        ret = val_a;
+    }
+
+    return val < 0.0f ? -ret : ret;
+}
+
 bool VescApp_AdcControlSupported(uint8_t control_type)
 {
     switch (control_type) {
@@ -83,9 +119,7 @@ bool VescApp_AdcControlSupported(uint8_t control_type)
     case VESC_ADC_PID_REV_CENTER:
         return true;
     default:
-        /* Button-based VESC ADC modes require digital button inputs that are not
-         * present on this hoverboard connector. Reject rather than emulate them
-         * with unsafe or surprising semantics. */
+        /* No physical digital button inputs are mapped on this connector. */
         return false;
     }
 }
@@ -93,7 +127,9 @@ bool VescApp_AdcControlSupported(uint8_t control_type)
 void VescApp_SetDefaults(VescAppConfig *config)
 {
     if (config == NULL) return;
-    config->controller_id = 10U;
+
+    /* Requested dual-VESC identity: LEFT local ID 1, RIGHT virtual ID 2. */
+    config->controller_id = 1U;
     config->timeout_ms = 1000U;
     config->timeout_brake_cA = 0;
     config->app_to_use = VESC_APP_UART;
@@ -129,6 +165,8 @@ void VescApp_ResetRuntime(void)
     filtered2_q15 = 0;
     ramped_permille = 0;
     safe_start_ok = false;
+    adc_range_ok = true;
+    safe_start_neutral_ms = 0U;
     previous_app_mode = 0xFFU;
     previous_control_type = 0xFFU;
 }
@@ -141,11 +179,20 @@ void VescApp_Init(void)
 
 bool VescApp_UartEnabled(void)
 {
-    /* Permanent UART is intentional: unlike a normal VESC, this board has no USB
-     * VESC Tool transport. USART3 must remain reachable in APP_ADC mode too. */
+    /* USART3 is the only VESC Tool transport, so keep it alive in ADC mode. */
     return vescAppConfig.app_to_use == VESC_APP_UART ||
            vescAppConfig.app_to_use == VESC_APP_ADC_UART ||
            vescAppConfig.app_to_use == VESC_APP_ADC;
+}
+
+bool VescApp_RangeOk(void)
+{
+    return adc_range_ok;
+}
+
+bool VescApp_SafeStartOk(void)
+{
+    return safe_start_ok;
 }
 
 int32_t VescApp_GetDecoded1Micro(void)
@@ -183,17 +230,42 @@ void VescApp_Update(uint32_t dt_ms)
         filtered2_q15 = 0;
         ramped_permille = 0;
         safe_start_ok = false;
+        adc_range_ok = true;
+        safe_start_neutral_ms = 0U;
         previous_app_mode = vescAppConfig.app_to_use;
         previous_control_type = vescAppConfig.adc_ctrl_type;
     }
 
     if (!VescApp_AdcControlSupported(vescAppConfig.adc_ctrl_type)) {
+        safe_start_ok = false;
+        safe_start_neutral_ms = 0U;
         VescProtocol_AdcSetNormalized(0, false);
         return;
     }
 
     const uint16_t voltage1_mv = adc_to_mv(adc_buffer.pa2Analog);
     const uint16_t voltage2_mv = adc_to_mv(adc_buffer.pa3Analog);
+
+    /* Match upstream adc_thread safety intent: out-of-range input cannot drive. */
+    adc_range_ok = voltage1_mv >= vescAppConfig.voltage_min_mV &&
+                   voltage1_mv <= vescAppConfig.voltage_max_mV;
+    if (!adc_range_ok) {
+        safe_start_ok = false;
+        safe_start_neutral_ms = 0U;
+        ramped_permille = 0;
+        VescProtocol_AdcSetNormalized(0, false);
+        return;
+    }
+
+    /* A fault re-arms safe-start instead of resuming at a non-zero throttle. */
+    if (RuntimeControl_HasBlockingFault() && vescAppConfig.safe_start != 0U) {
+        safe_start_ok = false;
+        safe_start_neutral_ms = 0U;
+        ramped_permille = 0;
+        VescProtocol_AdcSetNormalized(0, false);
+        return;
+    }
+
     const int32_t input1_q15 = map_q15(voltage1_mv,
                                        vescAppConfig.voltage_start_mV,
                                        vescAppConfig.voltage_end_mV,
@@ -211,18 +283,13 @@ void VescApp_Update(uint32_t dt_ms)
         filtered2_q15 = input2_q15;
     }
 
-    if (vescAppConfig.safe_start != 0U && !safe_start_ok) {
-        if (filtered1_q15 < 1200 && filtered2_q15 < 1200) {
-            safe_start_ok = true;
-        } else {
-            VescProtocol_AdcSetNormalized(0, false);
-            return;
-        }
-    }
-
     int32_t target_permille = 0;
     bool speed_mode = false;
+
     switch (vescAppConfig.adc_ctrl_type) {
+    case VESC_ADC_NONE:
+        target_permille = 0;
+        break;
     case VESC_ADC_CURRENT:
         target_permille = (filtered1_q15 * 1000) / 32767;
         break;
@@ -261,6 +328,40 @@ void VescApp_Update(uint32_t dt_ms)
     }
 
     target_permille = clamp32(target_permille, -1000, 1000);
+
+    /*
+     * VESC safe-start must use the command AFTER control-type mapping. In a
+     * center-throttle mode, ~1.65 V is neutral even though raw mapped ADC is 50%.
+     * Require 500 ms continuously near zero before enabling application output.
+     */
+    if (vescAppConfig.safe_start != 0U && !safe_start_ok) {
+        if (target_permille >= -10 && target_permille <= 10) {
+            uint32_t next = safe_start_neutral_ms + dt_ms;
+            if (next < safe_start_neutral_ms) next = UINT32_MAX;
+            safe_start_neutral_ms = next;
+            if (safe_start_neutral_ms >= 500U) safe_start_ok = true;
+        } else {
+            safe_start_neutral_ms = 0U;
+        }
+
+        if (!safe_start_ok) {
+            ramped_permille = 0;
+            VescProtocol_AdcSetNormalized(0, false);
+            return;
+        }
+    } else if (vescAppConfig.safe_start == 0U) {
+        safe_start_ok = true;
+    }
+
+    /* Upstream-compatible throttle curve; runs in background, never in FOC ISR. */
+    float pwr = (float)target_permille / 1000.0f;
+    pwr = throttle_curve(pwr,
+                         (float)vescAppConfig.throttle_exp_milli / 1000.0f,
+                         (float)vescAppConfig.throttle_exp_brake_milli / 1000.0f,
+                         (int)vescAppConfig.throttle_exp_mode);
+    target_permille = (int32_t)lroundf(pwr * 1000.0f);
+    target_permille = clamp32(target_permille, -1000, 1000);
+
     ramped_permille = ramp_permille(ramped_permille, (int16_t)target_permille,
                                     dt_ms, vescAppConfig.ramp_time_pos_ms,
                                     vescAppConfig.ramp_time_neg_ms);
