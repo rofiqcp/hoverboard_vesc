@@ -1,32 +1,32 @@
 [
   {
     "decoded1": 0.0,
+    "voltage1_V": 1.614,
+    "decoded2": 0.0,
+    "voltage2_V": 1.599
+  },
+  {
+    "decoded1": 0.0,
+    "voltage1_V": 1.698,
+    "decoded2": 0.0,
+    "voltage2_V": 1.613
+  },
+  {
+    "decoded1": 0.0,
     "voltage1_V": 1.74,
     "decoded2": 0.0,
-    "voltage2_V": 1.61
+    "voltage2_V": 1.657
   },
   {
     "decoded1": 0.0,
-    "voltage1_V": 1.737,
+    "voltage1_V": 1.621,
     "decoded2": 0.0,
-    "voltage2_V": 1.598
-  },
-  {
-    "decoded1": 0.0,
-    "voltage1_V": 1.68,
-    "decoded2": 0.0,
-    "voltage2_V": 1.556
+    "voltage2_V": 1.609
   },
   {
     "decoded1": 0.0,
     "voltage1_V": 1.703,
     "decoded2": 0.0,
-    "voltage2_V": 1.588
-  },
-  {
-    "decoded1": 0.0,
-    "voltage1_V": 1.717,
-    "decoded2": 0.0,
-    "voltage2_V": 1.575
+    "voltage2_V": 1.616
   }
 ]
