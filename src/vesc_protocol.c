@@ -846,7 +846,9 @@ static void set_duty(bool r,float d){
 }
 static void set_current(bool r,float a){
     const int16_t v=current_permille(r,a);const bool run=v!=0;
-    record_set_runtime(r,v,run);RuntimeControl_VescSetOne(!r,ESC_MODE_TRQ,v,run);
+    record_set_runtime(r,v,run);
+    if (run) RuntimeControl_VescSetOne(!r,ESC_MODE_TRQ,v,true);
+    else RuntimeControl_VescStopOne(!r);
     RuntimeControl_VescAlive();last_uart_control_ms=RuntimeControl_MonotonicMs();
 }
 static void set_brake(bool r,float a){
@@ -1350,7 +1352,7 @@ static void fw_version(bool r)
     o[i++]=0; /* qml hw */
     o[i++]=0; /* qml app */
     o[i++]=0; /* nrf flags */
-    if(!fw_append_cstr(o,sizeof(o),&i,"hoverboard-vesc6-v23")) return;
+    if(!fw_append_cstr(o,sizeof(o),&i,"hoverboard-vesc6-v24")) return;
     send_payload(o,(uint16_t)i);
 }
 

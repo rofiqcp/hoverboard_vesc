@@ -1,0 +1,13 @@
+
+=== 08_config_read_roundtrip 2026-08-14T13:25:14.556+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vesc/tools/vesc_full_test.py", line 1455, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vesc/tools/vesc_full_test.py", line 2127, in config_read_and_roundtrip
+    ack = self.dev.transact(bytes((COMM_SET_MCCONF,)) + mc[1:], node=node, timeout=4.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vesc/tools/vesc_full_test.py", line 1269, in transact
+    return self.read_payload(timeout=timeout, node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vesc/tools/vesc_full_test.py", line 1263, in read_payload
+    raise TimeoutError(f"VESC response timeout after {timeout or self.timeout:.1f}s")
+TimeoutError: VESC response timeout after 4.0s
+

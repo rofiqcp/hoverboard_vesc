@@ -139,6 +139,7 @@ void RuntimeControl_OnCommand(const EscCommandFrame *frame);
  * the existing host-domain expected by RuntimeControl. */
 void RuntimeControl_VescSetOne(bool left, uint8_t esc_mode, int32_t setpoint, bool arm);
 void RuntimeControl_VescReleaseAll(void);
+void RuntimeControl_VescStopOne(bool left);
 void RuntimeControl_VescAlive(void);
 
 /* Asynchronous VESC Tool commissioning bridge. The VESC protocol starts one

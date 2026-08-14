@@ -6,6 +6,7 @@
 #include "foc_motor.h"
 #include "motor_current_cal.h"
 #include "vesc_app.h"
+#include "vesc_config_compat.h"
 #include "left_encoder.h"
 #include "stm32f1xx_hal.h"
 #include "stm32f1xx_it.h"
@@ -1136,7 +1137,7 @@ static void sensor_cal_finish(uint8_t terminal_state, uint8_t result_code)
                      * encoder. Auto-detect ratio/pole-pairs and raw direction;
                      * incremental electrical zero is re-established safely at
                      * each power-on/first closed-loop run. */
-                    if (sequence_ok &&
+                    if ((sequence_ok || sensorCal.encoder_direction_proved) &&
                         candidate_config.encoder_cpr >= MOTOR_ENCODER_CPR_MIN &&
                         sensorCal.detected_pole_pairs >= 1U &&
                         sensorCal.detected_pole_pairs <= SENSOR_CAL_VESC_POLE_PAIRS_MAX) {
@@ -1186,6 +1187,7 @@ static void sensor_cal_finish(uint8_t terminal_state, uint8_t result_code)
     if (success && apply_candidate) {
         /* Commit hanya hasil AUTO yang memiliki proof arah/phase FOC. */
         settingsDirty = true;
+        VescConfig_InvalidateMcShadow(sensorCal.motor == ESC_MOTOR_RIGHT);
         const uint32_t primask = __get_PRIMASK();
         __disable_irq();
         *cfg = candidate_config;
@@ -1608,15 +1610,17 @@ static bool sensor_cal_service_vesc_encoder_probe(uint32_t now, uint32_t dt_ms,
              * physical motor is configured as 15 pole-pairs. Treat a +/-1 probe
              * estimate as validation of the authoritative motor pole count. */
             if (direction_ok && quadrature_ok) sensorCal.encoder_direction_proved = true;
-            const MotorRuntimeConfig *active_cfg = sensor_cal_config(sensorCal.motor);
-            uint8_t configured_pp = active_cfg != NULL ? active_cfg->encoder_ratio : 0U;
-            if (configured_pp == 0U) configured_pp = sensorCal.motor == ESC_MOTOR_LEFT ? motorConfLeft.foc_motor_pole_pairs : motorConfRight.foc_motor_pole_pairs;
+            /* Physical motor pole-pairs are authoritative. A previous noisy
+             * encoder detection must not become the reference for the next one. */
+            uint8_t configured_pp = sensorCal.motor == ESC_MOTOR_LEFT
+                ? motorConfLeft.foc_motor_pole_pairs : motorConfRight.foc_motor_pole_pairs;
             const uint8_t ratio_err = ratio > configured_pp ? (uint8_t)(ratio - configured_pp) :
                                                         (uint8_t)(configured_pp - ratio);
             const bool ratio_near_config = configured_pp >= 1U && configured_pp <= SENSOR_CAL_VESC_POLE_PAIRS_MAX &&
                                            ratio >= 1U && ratio_err <= 1U;
 
-            if (sequence_ok && direction_ok && quadrature_ok && enough && (ratio_ok || ratio_near_config)) {
+            const bool encoder_evidence_ok = sequence_ok || (direction_ok && quadrature_ok);
+            if (encoder_evidence_ok && direction_ok && quadrature_ok && enough && (ratio_ok || ratio_near_config)) {
                 sensorCal.detected_pole_pairs = ratio_near_config ? configured_pp : ratio;
                 sensorCal.detected_encoder_inverted = inverted > normal ? 1U : 0U;
                 sensorCal.encoder_direction_proved = true;
@@ -3105,6 +3109,8 @@ static void try_arm_motor(bool left, uint32_t now)
     const uint8_t bit = left ? 0x01U : 0x02U;
     const uint8_t mode = left ? requestedModeLeft : requestedModeRight;
     MotorRuntimeConfig *cfg = left ? &motorConfigLeft : &motorConfigRight;
+    const int32_t pending_target = left ? runtimeSetpointLeft : runtimeSetpointRight;
+    const bool zero_duty_full_brake = mode == ESC_MODE_DUTY && pending_target == 0;
 
     if (!*requested || *armed) return;
 
@@ -3123,14 +3129,14 @@ static void try_arm_motor(bool left, uint32_t now)
         set_arm_reject(left, ESC_ARM_REJECT_HOMING_BUSY);
         return;
     }
-    if (encoderAlign.active && encoderAlign.motor == motor) {
+    if (!zero_duty_full_brake && encoderAlign.active && encoderAlign.motor == motor) {
         set_arm_reject(left, ESC_ARM_REJECT_ALIGNMENT_BUSY);
         return;
     }
     /* Alignment encoder sisi lain tidak boleh menahan motor ini. Jika motor ini
      * sendiri juga Encoder dan belum aligned, ia akan menunggu giliran tanpa
      * menjatuhkan ARM request. */
-    if (encoderAlign.active && cfg->sensor_type == MOTOR_SENSOR_ENCODER_AB &&
+    if (!zero_duty_full_brake && encoderAlign.active && cfg->sensor_type == MOTOR_SENSOR_ENCODER_AB &&
         mode != ESC_MODE_OPEN && mode != ESC_MODE_HANDBRAKE && !(left ? encoderAlignedLeft : encoderAlignedRight)) {
         set_arm_reject(left, ESC_ARM_REJECT_ALIGNMENT_BUSY);
         return;
@@ -3139,7 +3145,7 @@ static void try_arm_motor(bool left, uint32_t now)
     /* Incremental A/B membutuhkan electrical zero sekali per power-on sebelum
      * closed-loop. Alignment ini hanya mengambil alih motor target. */
     const bool encoder_needs_alignment =
-        mode != ESC_MODE_OPEN && mode != ESC_MODE_HANDBRAKE &&
+        !zero_duty_full_brake && mode != ESC_MODE_OPEN && mode != ESC_MODE_HANDBRAKE &&
         cfg->sensor_type == MOTOR_SENSOR_ENCODER_AB &&
         cfg->encoder_calibrated != 0U &&
         !(left ? encoderAlignedLeft : encoderAlignedRight);
@@ -3829,11 +3835,53 @@ void RuntimeControl_VescReleaseAll(void)
     armRequestedRight = false;
     runtimeSetpointLeft = 0;
     runtimeSetpointRight = 0;
+    if (sensorCal.state == ESC_SENSOR_CAL_RUNNING)
+        sensor_cal_finish(ESC_SENSOR_CAL_ABORTED, 6U);
+    if (encoderAlign.active) encoder_alignment_abort();
+    if (homingActiveMask != 0U) homing_abort_all(ESC_HOMING_ABORTED);
     disarm_outputs();
+}
+
+/* V24 safety primitive: COMM_SET_CURRENT(0) / explicit STOP may never wait for
+ * sensor calibration, encoder alignment or homing. This path is deliberately
+ * outside ESC_MSG_CONTROL because that message can be temporarily blocked while
+ * commissioning owns the bridge. */
+void RuntimeControl_VescStopOne(bool left)
+{
+    const uint8_t motor = left ? ESC_MOTOR_LEFT : ESC_MOTOR_RIGHT;
+    if (sensorCal.state == ESC_SENSOR_CAL_RUNNING && sensorCal.motor == motor)
+        sensor_cal_finish(ESC_SENSOR_CAL_ABORTED, 6U);
+    if (encoderAlign.active && encoderAlign.motor == motor) encoder_alignment_abort();
+    if (homingActiveMask != 0U) homing_abort_all(ESC_HOMING_ABORTED);
+
+    if (left) {
+        armRequestedLeft = false;
+        runtimeSetpointLeft = 0;
+        requestedModeLeft = ESC_MODE_TRQ;
+        armRejectLeft = ESC_ARM_REJECT_NONE;
+    } else {
+        armRequestedRight = false;
+        runtimeSetpointRight = 0;
+        requestedModeRight = ESC_MODE_TRQ;
+        armRejectRight = ESC_ARM_REJECT_NONE;
+    }
+    disarm_motor(motor);
+    refresh_master_enable();
+    queue_arm_status_snapshot();
 }
 
 void RuntimeControl_VescSetOne(bool left, uint8_t esc_mode, int32_t setpoint, bool arm)
 {
+    const uint8_t target_motor = left ? ESC_MOTOR_LEFT : ESC_MOTOR_RIGHT;
+    /* VESC Tool Full Brake on this port is SET_DUTY(0): keep the bridge active
+     * at zero modulation. It is a safety/hold request, so cancel a pending
+     * alignment/commissioning owner for this motor before normal CONTROL routing. */
+    if (arm && esc_mode == ESC_MODE_DUTY && setpoint == 0) {
+        if (sensorCal.state == ESC_SENSOR_CAL_RUNNING && sensorCal.motor == target_motor)
+            sensor_cal_finish(ESC_SENSOR_CAL_ABORTED, 6U);
+        if (encoderAlign.active && encoderAlign.motor == target_motor) encoder_alignment_abort();
+        if (homingActiveMask != 0U) homing_abort_all(ESC_HOMING_ABORTED);
+    }
     EscCommandFrame f;
     memset(&f, 0, sizeof(f));
     f.start = ESC_FRAME_START;

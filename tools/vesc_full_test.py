@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-shot VESC-compatible V22 bench test for the dual hoverboard controller.
+"""One-shot VESC-compatible V24 bench test for the dual hoverboard controller.
 
 The script produces a timestamped diagnostic bundle that can be sent back for
 troubleshooting. It uses only the public VESC UART protocol plus a read-only
@@ -34,7 +34,7 @@ import traceback
 from typing import Any, Callable, Optional
 
 # VESC 6.00 command IDs used by this firmware.
-TESTER_RELEASE = "V23"
+TESTER_RELEASE = "V24"
 
 COMM_FW_VERSION = 0
 COMM_GET_VALUES = 4
@@ -1443,6 +1443,8 @@ class TestSuite:
         self.dev: Optional[SerialVesc] = None
         self.first_fault_time: dict[str, float] = {}
         self.original_appconf: Optional[bytes] = None
+        self.motion_abort = False
+        self.motion_abort_reason = ""
 
     def result(self, name: str, fn: Callable[[], Any], *, skip: bool = False, skip_reason: str = "") -> Any:
         start = time.monotonic(); started = now_iso()
@@ -1464,10 +1466,19 @@ class TestSuite:
             (self.log.root / "exceptions.log").open("a", encoding="utf-8").write(f"\n=== {name} {now_iso()} ===\n{tb}\n")
             # USB reset / EIO is itself a motor-safety event. Reconnect only to
             # transmit STOP; do not silently retry the failed motion command.
-            if self.dev is not None and (isinstance(exc, (TimeoutError, OSError)) or
-                                         "Serial" in type(exc).__name__ or "Input/output" in str(exc)):
+            serial_hard_fault = isinstance(exc, OSError) or "Serial" in type(exc).__name__ or \
+                                "Input/output" in str(exc) or "device disconnected" in str(exc)
+            if self.dev is not None and (isinstance(exc, TimeoutError) or serial_hard_fault):
                 try: self.dev.emergency_recover(f"{name}: {type(exc).__name__}: {exc}")
                 except Exception: pass
+            if serial_hard_fault:
+                # A USB/UART disappearance during a motor test often means MCU
+                # reset/brownout or power-stage noise. Never continue into the
+                # next actuator command after such an event, even if the port
+                # re-enumerates successfully. Recovery exists only to send STOP.
+                self.motion_abort = True
+                self.motion_abort_reason = f"fatal serial/hardware reset at {name}: {type(exc).__name__}: {exc}"
+                self.log.log("ERROR", "MOTION ABORT LATCHED: " + self.motion_abort_reason)
             r = TestResult(name, "FAIL", started, time.monotonic() - start, error=f"{type(exc).__name__}: {exc}")
             self.log.add_result(r); return None
 
@@ -1861,7 +1872,8 @@ class TestSuite:
             for node in ("local", "right"):
                 v = self.dev.values(node, f"idle_{k}")
                 # Presence/finite test for fields that previously disappeared while disarmed.
-                for key in ("motor_current_A", "id_A", "iq_A", "erpm", "vin_V"):
+                for key in ("motor_current_A", "input_current_A", "id_A", "iq_A", "vd", "vq",
+                            "erpm", "vin_V", "position_deg"):
                     assert key in v and isinstance(v[key], (int, float)) and math.isfinite(float(v[key])), f"{node} missing/nonfinite {key}"
                 samples[node].append(v)
             time.sleep(self.args.sample_period)
@@ -1889,6 +1901,9 @@ class TestSuite:
                 "iq_range_A": [min(x["iq_A"] for x in arr), max(x["iq_A"] for x in arr)],
                 "imotor_range_A": [min(x["motor_current_A"] for x in arr), max(x["motor_current_A"] for x in arr)],
                 "input_current_range_A": [min(x["input_current_A"] for x in arr), max(x["input_current_A"] for x in arr)],
+                "vd_range_V": [min(float(x["vd"]) for x in arr), max(float(x["vd"]) for x in arr)],
+                "vq_range_V": [min(float(x["vq"]) for x in arr), max(float(x["vq"]) for x in arr)],
+                "rotor_position_range_deg": [min(float(x["position_deg"]) for x in arr), max(float(x["position_deg"]) for x in arr)],
                 "erpm_range": [min(x["erpm"] for x in arr), max(x["erpm"] for x in arr)],
                 "faults": sorted(set(x["fault"] for x in arr)),
             } for node, arr in samples.items()
@@ -2655,10 +2670,10 @@ class TestSuite:
                     if position_guard_start_deg is None:
                         position_guard_start_deg = pnow
                         position_guard_start_t = now
-                    elif now - position_guard_start_t >= 0.25:
+                    elif now - position_guard_start_t >= 0.15:
                         moved = abs(pnow - position_guard_start_deg)
                         iq_abs = abs(float(vt.get("iq_A") or 0.0))
-                        if moved < 1.0 and iq_abs >= 0.8:
+                        if moved < 0.5 and iq_abs >= 0.6:
                             expected_cmd, expected_raw = self._set_wire_expectation(kind, value)
                             self.log.command_trace({
                                 "timestamp": now_iso(), "scope": "position_stall_abort",
@@ -2682,7 +2697,7 @@ class TestSuite:
                                 self.dev.stop(node); time.sleep(0.02)
                             raise AssertionError(
                                 f"{node} POSITION_STALL_OR_PHASE_REFERENCE_FAILURE: Iq={iq_abs:.2f}A "
-                                f"but position moved only {moved:.2f}deg in >=0.25s; released immediately")
+                                f"but position moved only {moved:.2f}deg in >=0.15s; released immediately")
 
                 # V17 fail-fast speed-direction guard. COMM_SET_RPM is electrical
                 # RPM. If a clearly moving motor reports the opposite sign from
@@ -3070,7 +3085,7 @@ class TestSuite:
         self.result("04a_no_false_drv_mapping", self.false_drv_mapping_test)
         self.result("05_prepare_safe_uart_test_mode", self.prepare_safe_uart_test_mode, skip=not self.args.full,
                     skip_reason="read-only run does not modify APPCONF")
-        self.result("06_idle_telemetry_id_iq_imotor", self.idle_telemetry,
+        self.result("06_idle_telemetry_all_standard_fields", self.idle_telemetry,
                     skip=not current_ok, skip_reason="prerequisite current-zero calibration failed")
         self.result("06a_protocol_get_matrix", self.protocol_get_matrix)
         self.result("06b_passive_spin_cross_side_isolation", self.passive_spin_current_observation,
@@ -3082,7 +3097,7 @@ class TestSuite:
         self.result("10_crc_parser_recovery", self.crc_recovery_hardware)
 
         if self.args.full:
-            # V19 default: one integrated board commissioning transaction. It is
+            # V24 default: one integrated board commissioning transaction. It is
             # deliberately the board sensor path (current-cal + LEFT encoder +
             # RIGHT Hall + LEFT electrical sync + EEPROM), not a claim of full
             # upstream R/L/flux motor-model detection. The old individual detect
@@ -3169,12 +3184,16 @@ class TestSuite:
                 ("28_right_position_0_360", "right", right_ready, lambda: self.position_test("right")),
             ]
             for name, node, ready, fn in tests:
-                self.result(name, fn, skip=not ready, skip_reason=f"{node} sensor/sync prerequisite failed")
-                if ready:
+                can_run = ready and not self.motion_abort
+                reason = self.motion_abort_reason if self.motion_abort else f"{node} sensor/sync prerequisite failed"
+                self.result(name, fn, skip=not can_run, skip_reason=reason)
+                if ready and not self.motion_abort:
                     self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+                elif self.motion_abort:
+                    self.result(name + "_release", lambda: None, skip=True, skip_reason=self.motion_abort_reason)
 
             for idx, node in enumerate(("local", "right"), start=29):
-                ready = left_ready if node == "local" else right_ready
+                ready = (left_ready if node == "local" else right_ready) and not self.motion_abort
                 self.result(
                     f"{idx:02d}_{node}_fault_stop_3s",
                     lambda n=node: self.monitor_fault_recovery(n),
@@ -3207,12 +3226,12 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--full", action="store_true", help="run integrated commissioning and motor movement tests")
     ap.add_argument("--yes", action="store_true", help="non-interactive confirmation for motion/homing writes")
     ap.add_argument("--individual-detect", action="store_true",
-                    help="use legacy separate LEFT encoder and RIGHT Hall detect instead of V22 integrated board commissioning")
+                    help="use legacy separate LEFT encoder and RIGHT Hall detect instead of V24 integrated board commissioning")
     ap.add_argument("--homing-calibrate", action="store_true",
                     help="opt-in LEFT full hard-stop calibration: right stop=0, left stop=360, save span, return 180")
     ap.add_argument("--homing-on", action="store_true",
                     help="enable and persist LEFT one-stop homing on future power-on (requires a previously calibrated span)")
-    ap.add_argument("--detect-current", type=float, default=1.0, help="sensor detect current [A] for --individual-detect; V22 integrated board commissioning uses conservative fixed 1.00 A")
+    ap.add_argument("--detect-current", type=float, default=1.0, help="sensor detect current [A] for --individual-detect; V24 integrated board commissioning uses conservative fixed 1.00 A")
     ap.add_argument("--current-cal-retries", type=int, default=2, help="retry transient block-mean current-zero failures")
     ap.add_argument("--detect-timeout", type=float, default=65.0)
     ap.add_argument("--duty", type=float, default=0.03, help="absolute duty used for +/- duty test")

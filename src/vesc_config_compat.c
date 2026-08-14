@@ -17,6 +17,7 @@
 #include "left_encoder.h"
 #include "config.h"
 #include "motor_current_cal.h"
+#include "stm32f1xx_hal.h"
 #include <math.h>
 #include <string.h>
 
@@ -39,6 +40,102 @@
  * over-current configuration error. */
 #define VESC_UI_ABS_CURRENT_MULTIPLIER 1.5f
 #define VESC_ERPM_LIMIT_START 0.8f
+
+/* V24: preserve the complete VESC 6.00 wire image for fields this compact
+ * STM32F103 port does not execute internally. One dedicated 2-KiB flash page
+ * (0x0803E800..0x0803EFFF) is excluded from the linker and stores both 481-byte
+ * MCCONFs plus the 493-byte APPCONF, so VESC Tool readback remains complete
+ * across MCU reset/power cycle. The normal emulated EEPROM remains at the final
+ * two 2-KiB pages (0x0803F000..0x0803FFFF). */
+#define VESC_SHADOW_FLASH_PAGE 0x0803E800UL
+#define VESC_SHADOW_MAGIC      0x56323453UL /* "V24S" */
+#define VESC_SHADOW_VERSION    1U
+#define VESC_SHADOW_FLAG_MC_L  0x01U
+#define VESC_SHADOW_FLAG_MC_R  0x02U
+#define VESC_SHADOW_FLAG_APP   0x04U
+
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint16_t version;
+    uint8_t flags;
+    uint8_t reserved;
+    uint32_t crc32;
+    uint8_t mc_left[VESC6_MCCONF_WIRE_SIZE];
+    uint8_t mc_right[VESC6_MCCONF_WIRE_SIZE];
+    uint8_t app[VESC6_APPCONF_WIRE_SIZE];
+} VescWireShadowImage;
+_Static_assert(sizeof(VescWireShadowImage) <= 0x800U, "VESC wire shadow must fit one STM32F103 flash page");
+static VescWireShadowImage shadow_work;
+
+static uint8_t mc_wire_shadow[2][VESC6_MCCONF_WIRE_SIZE];
+static bool mc_wire_shadow_valid[2];
+static uint8_t app_wire_shadow[VESC6_APPCONF_WIRE_SIZE];
+static bool app_wire_shadow_valid;
+static bool shadow_loaded;
+
+static uint32_t shadow_crc32_step(uint32_t crc, uint8_t data) {
+    crc ^= data;
+    for (uint8_t i = 0; i < 8U; ++i)
+        crc = (crc >> 1) ^ ((crc & 1U) ? 0xEDB88320UL : 0UL);
+    return crc;
+}
+
+static uint32_t shadow_crc32(const VescWireShadowImage *img) {
+    uint32_t crc = 0xFFFFFFFFUL;
+    crc = shadow_crc32_step(crc, img->flags);
+    const uint8_t *p = img->mc_left;
+    const uint32_t n = (uint32_t)(sizeof(img->mc_left) + sizeof(img->mc_right) + sizeof(img->app));
+    for (uint32_t i = 0; i < n; ++i) crc = shadow_crc32_step(crc, p[i]);
+    return crc ^ 0xFFFFFFFFUL;
+}
+
+static void shadow_load_once(void) {
+    if (shadow_loaded) return;
+    shadow_loaded = true;
+    const VescWireShadowImage *img = (const VescWireShadowImage *)(uintptr_t)VESC_SHADOW_FLASH_PAGE;
+    if (img->magic != VESC_SHADOW_MAGIC || img->version != VESC_SHADOW_VERSION) return;
+    if (shadow_crc32(img) != img->crc32) return;
+    if ((img->flags & VESC_SHADOW_FLAG_MC_L) != 0U) { memcpy(mc_wire_shadow[0], img->mc_left, VESC6_MCCONF_WIRE_SIZE); mc_wire_shadow_valid[0] = true; }
+    if ((img->flags & VESC_SHADOW_FLAG_MC_R) != 0U) { memcpy(mc_wire_shadow[1], img->mc_right, VESC6_MCCONF_WIRE_SIZE); mc_wire_shadow_valid[1] = true; }
+    if ((img->flags & VESC_SHADOW_FLAG_APP) != 0U) { memcpy(app_wire_shadow, img->app, VESC6_APPCONF_WIRE_SIZE); app_wire_shadow_valid = true; }
+}
+
+static bool shadow_save(void) {
+    shadow_load_once();
+    VescWireShadowImage *img = &shadow_work;
+    memset(img, 0xFF, sizeof(*img));
+    img->magic = VESC_SHADOW_MAGIC; img->version = VESC_SHADOW_VERSION; img->flags = 0U; img->reserved = 0U;
+    if (mc_wire_shadow_valid[0]) { img->flags |= VESC_SHADOW_FLAG_MC_L; memcpy(img->mc_left, mc_wire_shadow[0], VESC6_MCCONF_WIRE_SIZE); }
+    if (mc_wire_shadow_valid[1]) { img->flags |= VESC_SHADOW_FLAG_MC_R; memcpy(img->mc_right, mc_wire_shadow[1], VESC6_MCCONF_WIRE_SIZE); }
+    if (app_wire_shadow_valid) { img->flags |= VESC_SHADOW_FLAG_APP; memcpy(img->app, app_wire_shadow, VESC6_APPCONF_WIRE_SIZE); }
+    img->crc32 = shadow_crc32(img);
+
+    HAL_FLASH_Unlock();
+    FLASH_EraseInitTypeDef erase = {0};
+    uint32_t page_error = 0xFFFFFFFFUL;
+    erase.TypeErase = FLASH_TYPEERASE_PAGES; erase.PageAddress = VESC_SHADOW_FLASH_PAGE; erase.NbPages = 1U;
+    if (HAL_FLASHEx_Erase(&erase, &page_error) != HAL_OK) { HAL_FLASH_Lock(); return false; }
+    const uint8_t *raw = (const uint8_t *)img;
+    const uint32_t bytes = (uint32_t)sizeof(*img);
+    for (uint32_t off = 0U; off < bytes; off += 2U) {
+        uint16_t hw = raw[off];
+        if (off + 1U < bytes) hw |= (uint16_t)raw[off + 1U] << 8; else hw |= 0xFF00U;
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, VESC_SHADOW_FLASH_PAGE + off, hw) != HAL_OK) {
+            HAL_FLASH_Lock(); return false;
+        }
+    }
+    HAL_FLASH_Lock();
+    const VescWireShadowImage *verify = (const VescWireShadowImage *)(uintptr_t)VESC_SHADOW_FLASH_PAGE;
+    return verify->magic == VESC_SHADOW_MAGIC && verify->version == VESC_SHADOW_VERSION &&
+           verify->crc32 == img->crc32 && shadow_crc32(verify) == verify->crc32;
+}
+
+void VescConfig_InvalidateMcShadow(bool right_motor) {
+    shadow_load_once();
+    mc_wire_shadow_valid[right_motor ? 1U : 0U] = false;
+    (void)shadow_save();
+}
+void VescConfig_InvalidateAppShadow(void) { shadow_load_once(); app_wire_shadow_valid = false; (void)shadow_save(); }
 
 static float q16_to_float(int32_t v) { return (float)v / 65536.0f; }
 static int32_t float_to_q16(float v) {
@@ -99,8 +196,13 @@ static void hall_table_foc_vesc(const MotorRuntimeConfig *cfg, uint8_t out[8]) {
 }
 
 int32_t VescConfig_SerializeMc(uint8_t *b, bool right, bool defaults) {
-    (void)defaults;
     if (b == NULL) return 0;
+    shadow_load_once();
+    const uint8_t shadow_idx = right ? 1U : 0U;
+    if (!defaults && mc_wire_shadow_valid[shadow_idx]) {
+        memcpy(b, mc_wire_shadow[shadow_idx], VESC6_MCCONF_WIRE_SIZE);
+        return (int32_t)VESC6_MCCONF_WIRE_SIZE;
+    }
     int32_t i = 0;
     const mc_configuration *c = right ? &motorConfRight : &motorConfLeft;
     const MotorRuntimeConfig *r = right ? &motorConfigRight : &motorConfigLeft;
@@ -305,6 +407,7 @@ int32_t VescConfig_SerializeMc(uint8_t *b, bool right, bool defaults) {
 
 bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool store) {
     if (b == NULL || len != VESC6_MCCONF_WIRE_SIZE) return false;
+    shadow_load_once();
     if (store && RuntimeControl_Armed()) return false;
     /* Exact same-value writes from VESC Tool must be idempotent. This avoids
      * needless float->fixed quantization and never revokes calibration proof
@@ -312,7 +415,9 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
     uint8_t active_wire[VESC6_MCCONF_WIRE_SIZE];
     if (VescConfig_SerializeMc(active_wire, right, false) == (int32_t)VESC6_MCCONF_WIRE_SIZE &&
         memcmp(active_wire, b, VESC6_MCCONF_WIRE_SIZE) == 0) {
-        return !store || RuntimeSettings_Save();
+        /* Same-value roundtrip is an ACK-only transaction. Flash erase/program
+         * here caused the observed ~4 s host timeout and can stall motor ISR. */
+        return true;
     }
     int32_t i = 0;
     if (vesc_buf_get_u32(b, &i) != VESC6_MCCONF_SIGNATURE) return false;
@@ -510,8 +615,19 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
     pos->ki_q16 = c->p_pid_ki_q16;
     pos->kd_q16 = c->p_pid_kd_q16;
     MotorSensor_PrepareRuntime(r, right ? &motorSensorStateRight : &motorSensorStateLeft, c->foc_motor_pole_pairs);
-    if (!store) return true;
-    if (RuntimeSettings_Save()) return true;
+    const uint8_t shadow_idx = right ? 1U : 0U;
+    if (!store) {
+        memcpy(mc_wire_shadow[shadow_idx], b, VESC6_MCCONF_WIRE_SIZE);
+        mc_wire_shadow_valid[shadow_idx] = true;
+        return true;
+    }
+    if (RuntimeSettings_Save()) {
+        memcpy(mc_wire_shadow[shadow_idx], b, VESC6_MCCONF_WIRE_SIZE);
+        mc_wire_shadow_valid[shadow_idx] = true;
+        if (shadow_save()) return true;
+        mc_wire_shadow_valid[shadow_idx] = false;
+        return false;
+    }
     *c = old_c;
     *r = old_r;
     *pos = old_pos;
@@ -521,8 +637,12 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
 }
 
 int32_t VescConfig_SerializeApp(uint8_t *b, bool right, bool defaults) {
-    (void)defaults;
     if (b == NULL) return 0;
+    shadow_load_once();
+    if (!right && !defaults && app_wire_shadow_valid) {
+        memcpy(b, app_wire_shadow, VESC6_APPCONF_WIRE_SIZE);
+        return (int32_t)VESC6_APPCONF_WIRE_SIZE;
+    }
     int32_t i = 0;
     vesc_buf_append_u32(b, VESC6_APPCONF_SIGNATURE, &i);
     b[i++] = right ? (uint8_t)(vescAppConfig.controller_id + 1U) : vescAppConfig.controller_id;
@@ -625,6 +745,7 @@ int32_t VescConfig_SerializeApp(uint8_t *b, bool right, bool defaults) {
 
 bool VescConfig_DeserializeApp(const uint8_t *b, uint32_t len, bool right, bool store) {
     if (b == NULL || len != VESC6_APPCONF_WIRE_SIZE) return false;
+    shadow_load_once();
     if (store && RuntimeControl_Armed()) return false;
     int32_t i = 0;
     if (vesc_buf_get_u32(b, &i) != VESC6_APPCONF_SIGNATURE) return false;
@@ -725,5 +846,15 @@ bool VescConfig_DeserializeApp(const uint8_t *b, uint32_t len, bool right, bool 
     #undef MV_CLAMP
     VescApp_ResetRuntime();
 
-    return !store || RuntimeSettings_Save();
+    if (!store) {
+        memcpy(app_wire_shadow, b, VESC6_APPCONF_WIRE_SIZE);
+        app_wire_shadow_valid = true;
+        return true;
+    }
+    if (!RuntimeSettings_Save()) return false;
+    memcpy(app_wire_shadow, b, VESC6_APPCONF_WIRE_SIZE);
+    app_wire_shadow_valid = true;
+    if (shadow_save()) return true;
+    app_wire_shadow_valid = false;
+    return false;
 }

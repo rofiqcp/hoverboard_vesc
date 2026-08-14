@@ -10,4 +10,6 @@ int32_t VescConfig_SerializeMc(uint8_t *buffer, bool right_motor, bool defaults)
 bool VescConfig_DeserializeMc(const uint8_t *buffer, uint32_t len, bool right_motor, bool store);
 int32_t VescConfig_SerializeApp(uint8_t *buffer, bool right_motor, bool defaults);
 bool VescConfig_DeserializeApp(const uint8_t *buffer, uint32_t len, bool right_motor, bool store);
+void VescConfig_InvalidateMcShadow(bool right_motor);
+void VescConfig_InvalidateAppShadow(void);
 #endif

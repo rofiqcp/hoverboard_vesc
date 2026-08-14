@@ -5,7 +5,7 @@
 **  File        : LinkerScript.ld
 **
 **  Abstract    : Linker script for STM32F103RCTx Device with
-**                256KByte FLASH, 48KByte RAM
+**                256KByte FLASH, 48KByte RAM (250K application + 2K VESC shadow + 4K EEPROM)
 **
 **                Set heap size, stack size and stack location according
 **                to application requirements.
@@ -42,7 +42,7 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 MEMORY
 {
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 48K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 252K
+FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 250K
 }
 
 /* Define output sections */
