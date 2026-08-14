@@ -1,0 +1,9 @@
+kind,requested,command,wire_int32
+duty,0.03,5,3000
+duty,-0.03,5,-3000
+current,0.5,6,500
+current,-0.5,6,-500
+rpm,900,8,900
+rpm,-900,8,-900
+pos,15.0,9,15000000
+pos,-15.0,9,-15000000
