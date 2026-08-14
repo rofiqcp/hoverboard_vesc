@@ -1,0 +1,24 @@
+HOVERBOARD VESC V7 HARDWARE VERIFICATION STATUS
+
+Source/host verification:
+- 12/12 host regression: PASS
+- VESC packet/config self-tests: PASS
+- Python HBTS v5 self-test: PASS
+- Cortex-M3 hot-path codegen audit: PASS
+- Current-loop division helpers: 0
+- Encoder hot-path division helpers: 0
+- DMA ISR division helpers: 0
+
+Evidence from previous V6 hardware run:
+- UART / local + virtual CAN communication: PASS
+- current-zero calibration: PASS
+- MCCONF round-trip: PASS
+- ISR deadline: PASS (max ~3186 < 4000 cycle)
+- V6 sensor detect: FAIL (root behavior changed in V7)
+
+V7 hardware target:
+- NOT YET FLASHED/TESTED in this environment.
+- No physical STM32/motor/PSU is connected here.
+- PlatformIO and arm-none-eabi-gcc are not available in this container.
+
+Therefore V7 is source/host/codegen audited, not bench-certified until the user runs the included full tester on /dev/ttyUSB0.

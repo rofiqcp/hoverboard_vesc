@@ -1,0 +1,841 @@
+diff --git a/v23/hoverboard_vescv23/STM32F103RCTx_FLASH.ld b/hoverboard_vescv24/STM32F103RCTx_FLASH.ld
+index ffa7bed..64b40e4 100644
+--- a/v23/hoverboard_vescv23/STM32F103RCTx_FLASH.ld
++++ b/hoverboard_vescv24/STM32F103RCTx_FLASH.ld
+@@ -5,7 +5,7 @@
+ **  File        : LinkerScript.ld
+ **
+ **  Abstract    : Linker script for STM32F103RCTx Device with
+-**                256KByte FLASH, 48KByte RAM
++**                256KByte FLASH, 48KByte RAM (250K application + 2K VESC shadow + 4K EEPROM)
+ **
+ **                Set heap size, stack size and stack location according
+ **                to application requirements.
+@@ -42,7 +42,7 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
+ MEMORY
+ {
+ RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 48K
+-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 252K
++FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 250K
+ }
+ 
+ /* Define output sections */
+diff --git a/hoverboard_vescv24/V23_TO_V24.patch b/hoverboard_vescv24/V23_TO_V24.patch
+new file mode 100644
+index 0000000..e69de29
+diff --git a/hoverboard_vescv24/V24_DEEP_AUDIT.md b/hoverboard_vescv24/V24_DEEP_AUDIT.md
+new file mode 100644
+index 0000000..3fe52ba
+--- /dev/null
++++ b/hoverboard_vescv24/V24_DEEP_AUDIT.md
+@@ -0,0 +1,20 @@
++# V24 Deep Audit — 2026-08-14
++
++Baseline: V23 + `vesc_full_test_20260814_113745.zip`.
++
++Changes:
++1. STOP is now a dedicated safety path (`RuntimeControl_VescStopOne`) and cannot be blocked by encoder alignment/calibration.
++2. Global serial/DMA release aborts calibration/alignment/homing before both outputs are disabled.
++3. Full Brake `SET_DUTY(0)` cancels target alignment ownership and can keep the target bridge in zero-duty active state.
++4. Same-value MCCONF roundtrip no longer writes flash, removing the observed config-response timeout root cause.
++5. Full 481-byte MCCONF LEFT/RIGHT and 493-byte APPCONF wire shadows are persisted in a dedicated CRC-protected 2-KiB flash page, so VESC Tool fields survive MCU reset/power-cycle.
++6. Encoder detect accepts decisive quadrature-direction evidence and compares ratio against physical motor pole-pairs.
++7. Tester V24 makes a hardware serial disconnect a fatal motion-abort latch; remaining actuator tests are skipped.
++8. Position growl/stall fail-fast tightened to >=0.6 A with <0.5 degree movement for >=0.15 s.
++9. Standby test verifies Imotor, Ibattery, Id, Iq, Vd, Vq, eRPM, Vin and position are all present/finite.
++10. FW string changed to `hoverboard-vesc6-v24`.
++
++Validation available in this environment:
++- Python tester compile: PASS.
++- Python protocol/HBTS self-test: PASS, 1 PASS / 0 FAIL / 1 SKIP without hardware port.
++- PlatformIO/arm-none-eabi toolchain is not installed in this environment, so STM32 target link and physical motor test remain to be done on the actual board.
+diff --git a/hoverboard_vescv24/V24_UPSTREAM_CALLMAP.md b/hoverboard_vescv24/V24_UPSTREAM_CALLMAP.md
+new file mode 100644
+index 0000000..b99601f
+--- /dev/null
++++ b/hoverboard_vescv24/V24_UPSTREAM_CALLMAP.md
+@@ -0,0 +1,241 @@
++# V24 — Upstream VESC Path Map, Call Chain, Safety & Compatibility Audit
++
++Date: 2026-08-14
++Baseline: hoverboard_vescv23.zip
++Reference: https://github.com/vedderb/bldc (master inspected 2026-08-14)
++
++## 1. Upstream VESC paths relevant to this port
++
++### UART/protocol and command dispatch
++- `comm/packet.c` — VESC frame length/CRC parser and packet sender.
++- `comm/commands.c` — `COMM_*` command dispatcher, GET_VALUES, SET_DUTY/CURRENT/BRAKE/RPM/POS/HANDBRAKE, config and detect commands.
++- `datatypes.h` — `COMM_PACKET_ID`, `mc_configuration`, sensor/motor enums and protocol datatypes.
++
++### Motor command interface
++- `motor/mc_interface.c` — public motor API used by `commands.c`.
++- `motor/mcpwm_foc.c` — FOC implementation called from `mc_interface.c` for FOC motors.
++
++### Sensor / detection / configuration
++- `encoder/encoder.c` — ABI/encoder configuration and reading.
++- `conf_general.c` / `conf_general.h` — config persistence plus motor/sensor detect/autodetect entry points.
++- generated configuration serializer/deserializer in upstream build is the model for exact VESC Tool wire layout.
++
++## 2. Upstream command call chains
++
++These are semantic call maps, not copied source.
++
++- `COMM_SET_DUTY` -> `mc_interface_set_duty()` -> FOC motor path in `mcpwm_foc`.
++- `COMM_SET_CURRENT` -> `mc_interface_set_current()` -> `mcpwm_foc_set_current()`.
++- `COMM_SET_CURRENT_BRAKE` -> `mc_interface_set_brake_current()` -> `mcpwm_foc_set_brake_current()`.
++- `COMM_SET_RPM` -> `mc_interface_set_pid_speed()` -> `mcpwm_foc_set_pid_speed()`.
++- `COMM_SET_POS` -> `mc_interface_set_pid_pos()` -> direction/encoder normalization -> `mcpwm_foc_set_pid_pos()`.
++- `COMM_SET_HANDBRAKE` -> `mc_interface_set_handbrake()` -> `mcpwm_foc_set_handbrake()`.
++- `COMM_GET_VALUES` -> `mc_interface_read_reset_avg_motor_current/input_current/id/iq/vd/vq()` plus duty/RPM/voltage/tach/position/fault.
++- `COMM_SET_MCCONF` -> deserialize full mcconf -> enforce hardware limits -> store config -> apply config -> reply ACK.
++
++## 3. Local hoverboard V24 paths and call chains
++
++### 3.1 Serial receive
++
++`src/vesc_protocol.c`
++
++`USART3 RX DMA Channel3`
++-> `VescProtocol_Service()`
++-> `VescPacket_Feed()` (`src/vesc_packet.c`)
++-> `rx_cb()`
++-> `process_ctx(... LEFT ...)`
++-> optional `COMM_FORWARD_CAN`
++-> `process_ctx(... RIGHT ...)`
++-> command-specific handler.
++
++DMA RX transfer error or disabled DMA:
++
++`VescProtocol_Service()`
++-> `RuntimeControl_VescReleaseAll()`
++-> cancel sensor calibration/alignment/homing
++-> disable both motor outputs
++-> `VescProtocol_Init()`
++-> restart USART3 DMA parser.
++
++### 3.2 Duty
++
++`COMM_SET_DUTY`
++-> `set_duty()`
++-> normalize [-1..1] to [-1000..1000]
++-> `RuntimeControl_VescSetOne(... ESC_MODE_DUTY ...)`
++-> `RuntimeControl_OnCommand()`
++-> `try_arm_motor()`
++-> `mc_foc_set_control_mode(CONTROL_MODE_DUTY)`
++-> ISR/core `foc_motor.c`
++-> inverse Park/SVPWM
++-> TIM PWM.
++
++Special V24: `SET_DUTY(0)` is kept as active zero-duty/full-brake state. If a target encoder alignment owns the bridge, it is cancelled before entering full brake.
++
++### 3.3 Current / STOP
++
++Non-zero:
++
++`COMM_SET_CURRENT`
++-> `set_current()`
++-> `RuntimeControl_VescSetOne(... ESC_MODE_TRQ ...)`
++-> current-Iq target
++-> current PI
++-> Vd/Vq
++-> SVPWM.
++
++Zero / STOP:
++
++`COMM_SET_CURRENT(0)`
++-> `set_current()`
++-> **`RuntimeControl_VescStopOne()`**
++-> abort target calibration/alignment
++-> clear arm request/setpoint
++-> `disarm_motor()`
++-> MOE/output off.
++
++This bypasses the normal CONTROL path so STOP cannot be ignored by `ALIGNMENT_BUSY`.
++
++### 3.4 Current brake
++
++`COMM_SET_CURRENT_BRAKE`
++-> `set_brake()`
++-> `RuntimeControl_VescSetOne(... ESC_MODE_BRAKE ...)`
++-> `CONTROL_MODE_CURRENT_BRAKE`
++-> Iq sign selected to oppose measured speed
++-> current PI -> Vd/Vq -> SVPWM.
++
++### 3.5 Handbrake
++
++`COMM_SET_HANDBRAKE`
++-> `set_handbrake()`
++-> `RuntimeControl_VescSetOne(... ESC_MODE_HANDBRAKE ...)`
++-> `CONTROL_MODE_HANDBRAKE`
++-> FOC handbrake behavior.
++
++### 3.6 RPM
++
++`COMM_SET_RPM`
++-> `set_rpm()`
++-> eRPM conversion using physical pole-pairs
++-> `RuntimeControl_VescSetOne(... ESC_MODE_SPD ...)`
++-> `CONTROL_MODE_SPEED`
++-> speed PI -> Iq target
++-> current PI -> Vd/Vq -> SVPWM.
++
++### 3.7 Position
++
++`COMM_SET_POS`
++-> `set_pos()`
++-> `RuntimeControl_PositionTargetTicks()`
++-> `RuntimeControl_VescSetOne(... ESC_MODE_POS ...)`
++-> `CONTROL_MODE_POS`
++-> position PID -> speed/Iq target
++-> current loop -> Vd/Vq -> SVPWM.
++
++Tester V24 position fail-fast: if >=0.6 A Iq is built while position moves <0.5 degree for >=0.15 s, send repeated STOP immediately and end that test.
++
++## 4. Telemetry call chain
++
++`COMM_GET_VALUES / COMM_GET_VALUES_SELECTIVE`
++-> `append_values()`
++-> `current_avg_take()`
++-> standard VESC fields:
++  - FET temperature
++  - motor current
++  - input/battery current
++  - Id
++  - Iq
++  - duty
++  - eRPM
++  - input voltage
++  - tachometer / absolute tachometer
++  - fault
++  - rotor/mechanical position
++  - controller ID
++  - Vd
++  - Vq
++  - timeout status.
++
++When bridge is OFF, Id/Iq/Imotor/Ibattery/Vd/Vq remain present and finite but are reported as valid zero rather than stale active-control values. Rotor position remains readable from the sensor observer.
++
++`COMM_ROTOR_POSITION`
++-> `rotor_position()` / periodic stream mode
++-> `RuntimeControl` sensor position
++-> VESC float position reply.
++
++## 5. Config without wire truncation
++
++`src/vesc_config_compat.c`
++
++- exact VESC 6.00 MCCONF wire footprint: 481 bytes.
++- exact VESC 6.00 APPCONF wire footprint: 493 bytes.
++- implemented fields are parsed, range-checked and converted to STM32 fixed-point config.
++- V24 keeps exact full-size shadows for LEFT MCCONF, RIGHT MCCONF and local APPCONF so unsupported UI fields are not silently collapsed after write/readback.
++- one dedicated 2-KiB flash page at `0x0803E800..0x0803EFFF` persists those shadows across MCU reset/power-cycle; the application linker region is reduced from 252 KiB to 250 KiB, while the existing 4-KiB emulated EEPROM remains at `0x0803F000..0x0803FFFF`.
++- the flash shadow carries magic/version/flags/CRC32 and is verified after programming.
++- firmware-side detect invalidates the corresponding MCCONF shadow before publishing detected live config.
++- identical SET_MCCONF no longer performs a flash erase/program; it is an idempotent ACK-only transaction.
++
++Unsupported VESC-only fields are preserved for VESC Tool round-trip/persistence but are still not executed by the fixed-point control core unless this port has an explicit implementation for them. Implemented tuning fields continue to persist through `RuntimeSettings_Save()`.
++
++## 6. Hall detect
++
++`COMM_DETECT_HALL_FOC`
++-> `start_detect()`
++-> `RuntimeControl_VescStartSensorDetect(... HALL ...)`
++-> `sensor_cal_*` state machine
++-> observe Hall raw states and electrical sweep
++-> validate legal sequence/LUT
++-> apply candidate
++-> persist
++-> `detect_service()` replies.
++
++RIGHT is physically constrained to Hall.
++
++## 7. Encoder detect
++
++`COMM_DETECT_ENCODER`
++-> `start_detect()`
++-> `RuntimeControl_VescStartSensorDetect(... ENCODER_AB ...)`
++-> encoder probe state machine
++-> count valid/invalid quadrature transitions
++-> direction score normal vs inverted
++-> estimate electrical ratio
++-> compare probe ratio with authoritative physical motor pole-pairs
++-> commit encoder inversion/ratio
++-> electrical phase alignment
++-> persist/reply.
++
++V24 change for the captured board:
++- strong quadrature evidence (409 valid / 0 invalid in supplied log) and decisive direction score (0 vs 364) can prove encoder direction even if sequence-start bookkeeping does not produce a complete four-state cycle;
++- physical motor pole-pairs, not an old detected `encoder_ratio`, are the reference for +/-1 ratio tolerance.
++
++## 8. Full integrated autodetect
++
++`COMM_DETECT_APPLY_ALL_FOC`
++-> `auto_detect_start()`
++-> verify/request current-offset calibration
++-> RIGHT Hall detect
++-> LEFT ABI encoder detect
++-> LEFT electrical sync/alignment/homing readiness
++-> `RuntimeSettings_Save()`
++-> terminal reply from `auto_detect_service()`.
++
++This port's integrated detect is board/sensor commissioning. It is not a claim that every upstream VESC motor-model measurement (R/L/flux etc.) has been ported to this fixed-point STM32F103 core.
++
++## 9. Serial/reset fail-safe
++
++Firmware:
++- startup PWM timers have MOE disabled in `src/setup.c`;
++- runtime motor enable mask starts at zero;
++- RX DMA transport failure immediately invokes `RuntimeControl_VescReleaseAll()`;
++- global release now also aborts active sensor calibration, encoder alignment and homing before outputs are disabled.
++
++Host tester:
++- `SerialVesc.emergency_recover()` tries to reopen the port only to transmit STOP repeatedly;
++- V24 latches `motion_abort` on SerialException/OSError/EIO/device-disconnected;
++- after this latch, all later motion tests are SKIP, even if the port reconnects;
++- final diagnostics may still run if communication recovers.
++
++A true MCU brownout/reset cannot be prevented in software. If USB/UART disappears because the power rail collapses, also inspect 5-V/3.3-V rails, ground bounce, gate-driver supply, bootstrap, MOSFET switching noise and USB isolation. Firmware ensures reset starts with MOE off; hardware must ensure the MCU/driver rails remain valid.
+diff --git a/v23/hoverboard_vescv23/src/runtime_control.c b/hoverboard_vescv24/src/runtime_control.c
+index 87fc12b..6b5c2b8 100644
+--- a/v23/hoverboard_vescv23/src/runtime_control.c
++++ b/hoverboard_vescv24/src/runtime_control.c
+@@ -6,6 +6,7 @@
+ #include "foc_motor.h"
+ #include "motor_current_cal.h"
+ #include "vesc_app.h"
++#include "vesc_config_compat.h"
+ #include "left_encoder.h"
+ #include "stm32f1xx_hal.h"
+ #include "stm32f1xx_it.h"
+@@ -1136,7 +1137,7 @@ static void sensor_cal_finish(uint8_t terminal_state, uint8_t result_code)
+                      * encoder. Auto-detect ratio/pole-pairs and raw direction;
+                      * incremental electrical zero is re-established safely at
+                      * each power-on/first closed-loop run. */
+-                    if (sequence_ok &&
++                    if ((sequence_ok || sensorCal.encoder_direction_proved) &&
+                         candidate_config.encoder_cpr >= MOTOR_ENCODER_CPR_MIN &&
+                         sensorCal.detected_pole_pairs >= 1U &&
+                         sensorCal.detected_pole_pairs <= SENSOR_CAL_VESC_POLE_PAIRS_MAX) {
+@@ -1186,6 +1187,7 @@ static void sensor_cal_finish(uint8_t terminal_state, uint8_t result_code)
+     if (success && apply_candidate) {
+         /* Commit hanya hasil AUTO yang memiliki proof arah/phase FOC. */
+         settingsDirty = true;
++        VescConfig_InvalidateMcShadow(sensorCal.motor == ESC_MOTOR_RIGHT);
+         const uint32_t primask = __get_PRIMASK();
+         __disable_irq();
+         *cfg = candidate_config;
+@@ -1608,15 +1610,17 @@ static bool sensor_cal_service_vesc_encoder_probe(uint32_t now, uint32_t dt_ms,
+              * physical motor is configured as 15 pole-pairs. Treat a +/-1 probe
+              * estimate as validation of the authoritative motor pole count. */
+             if (direction_ok && quadrature_ok) sensorCal.encoder_direction_proved = true;
+-            const MotorRuntimeConfig *active_cfg = sensor_cal_config(sensorCal.motor);
+-            uint8_t configured_pp = active_cfg != NULL ? active_cfg->encoder_ratio : 0U;
+-            if (configured_pp == 0U) configured_pp = sensorCal.motor == ESC_MOTOR_LEFT ? motorConfLeft.foc_motor_pole_pairs : motorConfRight.foc_motor_pole_pairs;
++            /* Physical motor pole-pairs are authoritative. A previous noisy
++             * encoder detection must not become the reference for the next one. */
++            uint8_t configured_pp = sensorCal.motor == ESC_MOTOR_LEFT
++                ? motorConfLeft.foc_motor_pole_pairs : motorConfRight.foc_motor_pole_pairs;
+             const uint8_t ratio_err = ratio > configured_pp ? (uint8_t)(ratio - configured_pp) :
+                                                         (uint8_t)(configured_pp - ratio);
+             const bool ratio_near_config = configured_pp >= 1U && configured_pp <= SENSOR_CAL_VESC_POLE_PAIRS_MAX &&
+                                            ratio >= 1U && ratio_err <= 1U;
+ 
+-            if (sequence_ok && direction_ok && quadrature_ok && enough && (ratio_ok || ratio_near_config)) {
++            const bool encoder_evidence_ok = sequence_ok || (direction_ok && quadrature_ok);
++            if (encoder_evidence_ok && direction_ok && quadrature_ok && enough && (ratio_ok || ratio_near_config)) {
+                 sensorCal.detected_pole_pairs = ratio_near_config ? configured_pp : ratio;
+                 sensorCal.detected_encoder_inverted = inverted > normal ? 1U : 0U;
+                 sensorCal.encoder_direction_proved = true;
+@@ -3105,6 +3109,8 @@ static void try_arm_motor(bool left, uint32_t now)
+     const uint8_t bit = left ? 0x01U : 0x02U;
+     const uint8_t mode = left ? requestedModeLeft : requestedModeRight;
+     MotorRuntimeConfig *cfg = left ? &motorConfigLeft : &motorConfigRight;
++    const int32_t pending_target = left ? runtimeSetpointLeft : runtimeSetpointRight;
++    const bool zero_duty_full_brake = mode == ESC_MODE_DUTY && pending_target == 0;
+ 
+     if (!*requested || *armed) return;
+ 
+@@ -3123,14 +3129,14 @@ static void try_arm_motor(bool left, uint32_t now)
+         set_arm_reject(left, ESC_ARM_REJECT_HOMING_BUSY);
+         return;
+     }
+-    if (encoderAlign.active && encoderAlign.motor == motor) {
++    if (!zero_duty_full_brake && encoderAlign.active && encoderAlign.motor == motor) {
+         set_arm_reject(left, ESC_ARM_REJECT_ALIGNMENT_BUSY);
+         return;
+     }
+     /* Alignment encoder sisi lain tidak boleh menahan motor ini. Jika motor ini
+      * sendiri juga Encoder dan belum aligned, ia akan menunggu giliran tanpa
+      * menjatuhkan ARM request. */
+-    if (encoderAlign.active && cfg->sensor_type == MOTOR_SENSOR_ENCODER_AB &&
++    if (!zero_duty_full_brake && encoderAlign.active && cfg->sensor_type == MOTOR_SENSOR_ENCODER_AB &&
+         mode != ESC_MODE_OPEN && mode != ESC_MODE_HANDBRAKE && !(left ? encoderAlignedLeft : encoderAlignedRight)) {
+         set_arm_reject(left, ESC_ARM_REJECT_ALIGNMENT_BUSY);
+         return;
+@@ -3139,7 +3145,7 @@ static void try_arm_motor(bool left, uint32_t now)
+     /* Incremental A/B membutuhkan electrical zero sekali per power-on sebelum
+      * closed-loop. Alignment ini hanya mengambil alih motor target. */
+     const bool encoder_needs_alignment =
+-        mode != ESC_MODE_OPEN && mode != ESC_MODE_HANDBRAKE &&
++        !zero_duty_full_brake && mode != ESC_MODE_OPEN && mode != ESC_MODE_HANDBRAKE &&
+         cfg->sensor_type == MOTOR_SENSOR_ENCODER_AB &&
+         cfg->encoder_calibrated != 0U &&
+         !(left ? encoderAlignedLeft : encoderAlignedRight);
+@@ -3829,11 +3835,53 @@ void RuntimeControl_VescReleaseAll(void)
+     armRequestedRight = false;
+     runtimeSetpointLeft = 0;
+     runtimeSetpointRight = 0;
++    if (sensorCal.state == ESC_SENSOR_CAL_RUNNING)
++        sensor_cal_finish(ESC_SENSOR_CAL_ABORTED, 6U);
++    if (encoderAlign.active) encoder_alignment_abort();
++    if (homingActiveMask != 0U) homing_abort_all(ESC_HOMING_ABORTED);
+     disarm_outputs();
+ }
+ 
++/* V24 safety primitive: COMM_SET_CURRENT(0) / explicit STOP may never wait for
++ * sensor calibration, encoder alignment or homing. This path is deliberately
++ * outside ESC_MSG_CONTROL because that message can be temporarily blocked while
++ * commissioning owns the bridge. */
++void RuntimeControl_VescStopOne(bool left)
++{
++    const uint8_t motor = left ? ESC_MOTOR_LEFT : ESC_MOTOR_RIGHT;
++    if (sensorCal.state == ESC_SENSOR_CAL_RUNNING && sensorCal.motor == motor)
++        sensor_cal_finish(ESC_SENSOR_CAL_ABORTED, 6U);
++    if (encoderAlign.active && encoderAlign.motor == motor) encoder_alignment_abort();
++    if (homingActiveMask != 0U) homing_abort_all(ESC_HOMING_ABORTED);
++
++    if (left) {
++        armRequestedLeft = false;
++        runtimeSetpointLeft = 0;
++        requestedModeLeft = ESC_MODE_TRQ;
++        armRejectLeft = ESC_ARM_REJECT_NONE;
++    } else {
++        armRequestedRight = false;
++        runtimeSetpointRight = 0;
++        requestedModeRight = ESC_MODE_TRQ;
++        armRejectRight = ESC_ARM_REJECT_NONE;
++    }
++    disarm_motor(motor);
++    refresh_master_enable();
++    queue_arm_status_snapshot();
++}
++
+ void RuntimeControl_VescSetOne(bool left, uint8_t esc_mode, int32_t setpoint, bool arm)
+ {
++    const uint8_t target_motor = left ? ESC_MOTOR_LEFT : ESC_MOTOR_RIGHT;
++    /* VESC Tool Full Brake on this port is SET_DUTY(0): keep the bridge active
++     * at zero modulation. It is a safety/hold request, so cancel a pending
++     * alignment/commissioning owner for this motor before normal CONTROL routing. */
++    if (arm && esc_mode == ESC_MODE_DUTY && setpoint == 0) {
++        if (sensorCal.state == ESC_SENSOR_CAL_RUNNING && sensorCal.motor == target_motor)
++            sensor_cal_finish(ESC_SENSOR_CAL_ABORTED, 6U);
++        if (encoderAlign.active && encoderAlign.motor == target_motor) encoder_alignment_abort();
++        if (homingActiveMask != 0U) homing_abort_all(ESC_HOMING_ABORTED);
++    }
+     EscCommandFrame f;
+     memset(&f, 0, sizeof(f));
+     f.start = ESC_FRAME_START;
+diff --git a/v23/hoverboard_vescv23/src/runtime_control.h b/hoverboard_vescv24/src/runtime_control.h
+index c37c65c..11f6407 100644
+--- a/v23/hoverboard_vescv23/src/runtime_control.h
++++ b/hoverboard_vescv24/src/runtime_control.h
+@@ -139,6 +139,7 @@ void RuntimeControl_OnCommand(const EscCommandFrame *frame);
+  * the existing host-domain expected by RuntimeControl. */
+ void RuntimeControl_VescSetOne(bool left, uint8_t esc_mode, int32_t setpoint, bool arm);
+ void RuntimeControl_VescReleaseAll(void);
++void RuntimeControl_VescStopOne(bool left);
+ void RuntimeControl_VescAlive(void);
+ 
+ /* Asynchronous VESC Tool commissioning bridge. The VESC protocol starts one
+diff --git a/v23/hoverboard_vescv23/src/vesc_config_compat.c b/hoverboard_vescv24/src/vesc_config_compat.c
+index 45abf68..d8d904c 100644
+--- a/v23/hoverboard_vescv23/src/vesc_config_compat.c
++++ b/hoverboard_vescv24/src/vesc_config_compat.c
+@@ -17,6 +17,7 @@
+ #include "left_encoder.h"
+ #include "config.h"
+ #include "motor_current_cal.h"
++#include "stm32f1xx_hal.h"
+ #include <math.h>
+ #include <string.h>
+ 
+@@ -40,6 +41,102 @@
+ #define VESC_UI_ABS_CURRENT_MULTIPLIER 1.5f
+ #define VESC_ERPM_LIMIT_START 0.8f
+ 
++/* V24: preserve the complete VESC 6.00 wire image for fields this compact
++ * STM32F103 port does not execute internally. One dedicated 2-KiB flash page
++ * (0x0803E800..0x0803EFFF) is excluded from the linker and stores both 481-byte
++ * MCCONFs plus the 493-byte APPCONF, so VESC Tool readback remains complete
++ * across MCU reset/power cycle. The normal emulated EEPROM remains at the final
++ * two 2-KiB pages (0x0803F000..0x0803FFFF). */
++#define VESC_SHADOW_FLASH_PAGE 0x0803E800UL
++#define VESC_SHADOW_MAGIC      0x56323453UL /* "V24S" */
++#define VESC_SHADOW_VERSION    1U
++#define VESC_SHADOW_FLAG_MC_L  0x01U
++#define VESC_SHADOW_FLAG_MC_R  0x02U
++#define VESC_SHADOW_FLAG_APP   0x04U
++
++typedef struct __attribute__((packed)) {
++    uint32_t magic;
++    uint16_t version;
++    uint8_t flags;
++    uint8_t reserved;
++    uint32_t crc32;
++    uint8_t mc_left[VESC6_MCCONF_WIRE_SIZE];
++    uint8_t mc_right[VESC6_MCCONF_WIRE_SIZE];
++    uint8_t app[VESC6_APPCONF_WIRE_SIZE];
++} VescWireShadowImage;
++_Static_assert(sizeof(VescWireShadowImage) <= 0x800U, "VESC wire shadow must fit one STM32F103 flash page");
++static VescWireShadowImage shadow_work;
++
++static uint8_t mc_wire_shadow[2][VESC6_MCCONF_WIRE_SIZE];
++static bool mc_wire_shadow_valid[2];
++static uint8_t app_wire_shadow[VESC6_APPCONF_WIRE_SIZE];
++static bool app_wire_shadow_valid;
++static bool shadow_loaded;
++
++static uint32_t shadow_crc32_step(uint32_t crc, uint8_t data) {
++    crc ^= data;
++    for (uint8_t i = 0; i < 8U; ++i)
++        crc = (crc >> 1) ^ ((crc & 1U) ? 0xEDB88320UL : 0UL);
++    return crc;
++}
++
++static uint32_t shadow_crc32(const VescWireShadowImage *img) {
++    uint32_t crc = 0xFFFFFFFFUL;
++    crc = shadow_crc32_step(crc, img->flags);
++    const uint8_t *p = img->mc_left;
++    const uint32_t n = (uint32_t)(sizeof(img->mc_left) + sizeof(img->mc_right) + sizeof(img->app));
++    for (uint32_t i = 0; i < n; ++i) crc = shadow_crc32_step(crc, p[i]);
++    return crc ^ 0xFFFFFFFFUL;
++}
++
++static void shadow_load_once(void) {
++    if (shadow_loaded) return;
++    shadow_loaded = true;
++    const VescWireShadowImage *img = (const VescWireShadowImage *)(uintptr_t)VESC_SHADOW_FLASH_PAGE;
++    if (img->magic != VESC_SHADOW_MAGIC || img->version != VESC_SHADOW_VERSION) return;
++    if (shadow_crc32(img) != img->crc32) return;
++    if ((img->flags & VESC_SHADOW_FLAG_MC_L) != 0U) { memcpy(mc_wire_shadow[0], img->mc_left, VESC6_MCCONF_WIRE_SIZE); mc_wire_shadow_valid[0] = true; }
++    if ((img->flags & VESC_SHADOW_FLAG_MC_R) != 0U) { memcpy(mc_wire_shadow[1], img->mc_right, VESC6_MCCONF_WIRE_SIZE); mc_wire_shadow_valid[1] = true; }
++    if ((img->flags & VESC_SHADOW_FLAG_APP) != 0U) { memcpy(app_wire_shadow, img->app, VESC6_APPCONF_WIRE_SIZE); app_wire_shadow_valid = true; }
++}
++
++static bool shadow_save(void) {
++    shadow_load_once();
++    VescWireShadowImage *img = &shadow_work;
++    memset(img, 0xFF, sizeof(*img));
++    img->magic = VESC_SHADOW_MAGIC; img->version = VESC_SHADOW_VERSION; img->flags = 0U; img->reserved = 0U;
++    if (mc_wire_shadow_valid[0]) { img->flags |= VESC_SHADOW_FLAG_MC_L; memcpy(img->mc_left, mc_wire_shadow[0], VESC6_MCCONF_WIRE_SIZE); }
++    if (mc_wire_shadow_valid[1]) { img->flags |= VESC_SHADOW_FLAG_MC_R; memcpy(img->mc_right, mc_wire_shadow[1], VESC6_MCCONF_WIRE_SIZE); }
++    if (app_wire_shadow_valid) { img->flags |= VESC_SHADOW_FLAG_APP; memcpy(img->app, app_wire_shadow, VESC6_APPCONF_WIRE_SIZE); }
++    img->crc32 = shadow_crc32(img);
++
++    HAL_FLASH_Unlock();
++    FLASH_EraseInitTypeDef erase = {0};
++    uint32_t page_error = 0xFFFFFFFFUL;
++    erase.TypeErase = FLASH_TYPEERASE_PAGES; erase.PageAddress = VESC_SHADOW_FLASH_PAGE; erase.NbPages = 1U;
++    if (HAL_FLASHEx_Erase(&erase, &page_error) != HAL_OK) { HAL_FLASH_Lock(); return false; }
++    const uint8_t *raw = (const uint8_t *)img;
++    const uint32_t bytes = (uint32_t)sizeof(*img);
++    for (uint32_t off = 0U; off < bytes; off += 2U) {
++        uint16_t hw = raw[off];
++        if (off + 1U < bytes) hw |= (uint16_t)raw[off + 1U] << 8; else hw |= 0xFF00U;
++        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, VESC_SHADOW_FLASH_PAGE + off, hw) != HAL_OK) {
++            HAL_FLASH_Lock(); return false;
++        }
++    }
++    HAL_FLASH_Lock();
++    const VescWireShadowImage *verify = (const VescWireShadowImage *)(uintptr_t)VESC_SHADOW_FLASH_PAGE;
++    return verify->magic == VESC_SHADOW_MAGIC && verify->version == VESC_SHADOW_VERSION &&
++           verify->crc32 == img->crc32 && shadow_crc32(verify) == verify->crc32;
++}
++
++void VescConfig_InvalidateMcShadow(bool right_motor) {
++    shadow_load_once();
++    mc_wire_shadow_valid[right_motor ? 1U : 0U] = false;
++    (void)shadow_save();
++}
++void VescConfig_InvalidateAppShadow(void) { shadow_load_once(); app_wire_shadow_valid = false; (void)shadow_save(); }
++
+ static float q16_to_float(int32_t v) { return (float)v / 65536.0f; }
+ static int32_t float_to_q16(float v) {
+     if (v > 32767.0f) v = 32767.0f;
+@@ -99,8 +196,13 @@ static void hall_table_foc_vesc(const MotorRuntimeConfig *cfg, uint8_t out[8]) {
+ }
+ 
+ int32_t VescConfig_SerializeMc(uint8_t *b, bool right, bool defaults) {
+-    (void)defaults;
+     if (b == NULL) return 0;
++    shadow_load_once();
++    const uint8_t shadow_idx = right ? 1U : 0U;
++    if (!defaults && mc_wire_shadow_valid[shadow_idx]) {
++        memcpy(b, mc_wire_shadow[shadow_idx], VESC6_MCCONF_WIRE_SIZE);
++        return (int32_t)VESC6_MCCONF_WIRE_SIZE;
++    }
+     int32_t i = 0;
+     const mc_configuration *c = right ? &motorConfRight : &motorConfLeft;
+     const MotorRuntimeConfig *r = right ? &motorConfigRight : &motorConfigLeft;
+@@ -305,6 +407,7 @@ int32_t VescConfig_SerializeMc(uint8_t *b, bool right, bool defaults) {
+ 
+ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool store) {
+     if (b == NULL || len != VESC6_MCCONF_WIRE_SIZE) return false;
++    shadow_load_once();
+     if (store && RuntimeControl_Armed()) return false;
+     /* Exact same-value writes from VESC Tool must be idempotent. This avoids
+      * needless float->fixed quantization and never revokes calibration proof
+@@ -312,7 +415,9 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
+     uint8_t active_wire[VESC6_MCCONF_WIRE_SIZE];
+     if (VescConfig_SerializeMc(active_wire, right, false) == (int32_t)VESC6_MCCONF_WIRE_SIZE &&
+         memcmp(active_wire, b, VESC6_MCCONF_WIRE_SIZE) == 0) {
+-        return !store || RuntimeSettings_Save();
++        /* Same-value roundtrip is an ACK-only transaction. Flash erase/program
++         * here caused the observed ~4 s host timeout and can stall motor ISR. */
++        return true;
+     }
+     int32_t i = 0;
+     if (vesc_buf_get_u32(b, &i) != VESC6_MCCONF_SIGNATURE) return false;
+@@ -510,8 +615,19 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
+     pos->ki_q16 = c->p_pid_ki_q16;
+     pos->kd_q16 = c->p_pid_kd_q16;
+     MotorSensor_PrepareRuntime(r, right ? &motorSensorStateRight : &motorSensorStateLeft, c->foc_motor_pole_pairs);
+-    if (!store) return true;
+-    if (RuntimeSettings_Save()) return true;
++    const uint8_t shadow_idx = right ? 1U : 0U;
++    if (!store) {
++        memcpy(mc_wire_shadow[shadow_idx], b, VESC6_MCCONF_WIRE_SIZE);
++        mc_wire_shadow_valid[shadow_idx] = true;
++        return true;
++    }
++    if (RuntimeSettings_Save()) {
++        memcpy(mc_wire_shadow[shadow_idx], b, VESC6_MCCONF_WIRE_SIZE);
++        mc_wire_shadow_valid[shadow_idx] = true;
++        if (shadow_save()) return true;
++        mc_wire_shadow_valid[shadow_idx] = false;
++        return false;
++    }
+     *c = old_c;
+     *r = old_r;
+     *pos = old_pos;
+@@ -521,8 +637,12 @@ bool VescConfig_DeserializeMc(const uint8_t *b, uint32_t len, bool right, bool s
+ }
+ 
+ int32_t VescConfig_SerializeApp(uint8_t *b, bool right, bool defaults) {
+-    (void)defaults;
+     if (b == NULL) return 0;
++    shadow_load_once();
++    if (!right && !defaults && app_wire_shadow_valid) {
++        memcpy(b, app_wire_shadow, VESC6_APPCONF_WIRE_SIZE);
++        return (int32_t)VESC6_APPCONF_WIRE_SIZE;
++    }
+     int32_t i = 0;
+     vesc_buf_append_u32(b, VESC6_APPCONF_SIGNATURE, &i);
+     b[i++] = right ? (uint8_t)(vescAppConfig.controller_id + 1U) : vescAppConfig.controller_id;
+@@ -625,6 +745,7 @@ int32_t VescConfig_SerializeApp(uint8_t *b, bool right, bool defaults) {
+ 
+ bool VescConfig_DeserializeApp(const uint8_t *b, uint32_t len, bool right, bool store) {
+     if (b == NULL || len != VESC6_APPCONF_WIRE_SIZE) return false;
++    shadow_load_once();
+     if (store && RuntimeControl_Armed()) return false;
+     int32_t i = 0;
+     if (vesc_buf_get_u32(b, &i) != VESC6_APPCONF_SIGNATURE) return false;
+@@ -725,5 +846,15 @@ bool VescConfig_DeserializeApp(const uint8_t *b, uint32_t len, bool right, bool
+     #undef MV_CLAMP
+     VescApp_ResetRuntime();
+ 
+-    return !store || RuntimeSettings_Save();
++    if (!store) {
++        memcpy(app_wire_shadow, b, VESC6_APPCONF_WIRE_SIZE);
++        app_wire_shadow_valid = true;
++        return true;
++    }
++    if (!RuntimeSettings_Save()) return false;
++    memcpy(app_wire_shadow, b, VESC6_APPCONF_WIRE_SIZE);
++    app_wire_shadow_valid = true;
++    if (shadow_save()) return true;
++    app_wire_shadow_valid = false;
++    return false;
+ }
+diff --git a/v23/hoverboard_vescv23/src/vesc_config_compat.h b/hoverboard_vescv24/src/vesc_config_compat.h
+index 309e60a..0a3be53 100644
+--- a/v23/hoverboard_vescv23/src/vesc_config_compat.h
++++ b/hoverboard_vescv24/src/vesc_config_compat.h
+@@ -10,4 +10,6 @@ int32_t VescConfig_SerializeMc(uint8_t *buffer, bool right_motor, bool defaults)
+ bool VescConfig_DeserializeMc(const uint8_t *buffer, uint32_t len, bool right_motor, bool store);
+ int32_t VescConfig_SerializeApp(uint8_t *buffer, bool right_motor, bool defaults);
+ bool VescConfig_DeserializeApp(const uint8_t *buffer, uint32_t len, bool right_motor, bool store);
++void VescConfig_InvalidateMcShadow(bool right_motor);
++void VescConfig_InvalidateAppShadow(void);
+ #endif
+diff --git a/v23/hoverboard_vescv23/src/vesc_protocol.c b/hoverboard_vescv24/src/vesc_protocol.c
+index 42e1e5c..a3caa8a 100644
+--- a/v23/hoverboard_vescv23/src/vesc_protocol.c
++++ b/hoverboard_vescv24/src/vesc_protocol.c
+@@ -846,7 +846,9 @@ static void set_duty(bool r,float d){
+ }
+ static void set_current(bool r,float a){
+     const int16_t v=current_permille(r,a);const bool run=v!=0;
+-    record_set_runtime(r,v,run);RuntimeControl_VescSetOne(!r,ESC_MODE_TRQ,v,run);
++    record_set_runtime(r,v,run);
++    if (run) RuntimeControl_VescSetOne(!r,ESC_MODE_TRQ,v,true);
++    else RuntimeControl_VescStopOne(!r);
+     RuntimeControl_VescAlive();last_uart_control_ms=RuntimeControl_MonotonicMs();
+ }
+ static void set_brake(bool r,float a){
+@@ -1350,7 +1352,7 @@ static void fw_version(bool r)
+     o[i++]=0; /* qml hw */
+     o[i++]=0; /* qml app */
+     o[i++]=0; /* nrf flags */
+-    if(!fw_append_cstr(o,sizeof(o),&i,"hoverboard-vesc6-v23")) return;
++    if(!fw_append_cstr(o,sizeof(o),&i,"hoverboard-vesc6-v24")) return;
+     send_payload(o,(uint16_t)i);
+ }
+ 
+diff --git a/v23/hoverboard_vescv23/tools/vesc_full_test.py b/hoverboard_vescv24/tools/vesc_full_test.py
+index 2ffdcdf..494e111 100644
+--- a/v23/hoverboard_vescv23/tools/vesc_full_test.py
++++ b/hoverboard_vescv24/tools/vesc_full_test.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""One-shot VESC-compatible V22 bench test for the dual hoverboard controller.
++"""One-shot VESC-compatible V24 bench test for the dual hoverboard controller.
+ 
+ The script produces a timestamped diagnostic bundle that can be sent back for
+ troubleshooting. It uses only the public VESC UART protocol plus a read-only
+@@ -34,7 +34,7 @@ import traceback
+ from typing import Any, Callable, Optional
+ 
+ # VESC 6.00 command IDs used by this firmware.
+-TESTER_RELEASE = "V23"
++TESTER_RELEASE = "V24"
+ 
+ COMM_FW_VERSION = 0
+ COMM_GET_VALUES = 4
+@@ -1443,6 +1443,8 @@ class TestSuite:
+         self.dev: Optional[SerialVesc] = None
+         self.first_fault_time: dict[str, float] = {}
+         self.original_appconf: Optional[bytes] = None
++        self.motion_abort = False
++        self.motion_abort_reason = ""
+ 
+     def result(self, name: str, fn: Callable[[], Any], *, skip: bool = False, skip_reason: str = "") -> Any:
+         start = time.monotonic(); started = now_iso()
+@@ -1464,10 +1466,19 @@ class TestSuite:
+             (self.log.root / "exceptions.log").open("a", encoding="utf-8").write(f"\n=== {name} {now_iso()} ===\n{tb}\n")
+             # USB reset / EIO is itself a motor-safety event. Reconnect only to
+             # transmit STOP; do not silently retry the failed motion command.
+-            if self.dev is not None and (isinstance(exc, (TimeoutError, OSError)) or
+-                                         "Serial" in type(exc).__name__ or "Input/output" in str(exc)):
++            serial_hard_fault = isinstance(exc, OSError) or "Serial" in type(exc).__name__ or \
++                                "Input/output" in str(exc) or "device disconnected" in str(exc)
++            if self.dev is not None and (isinstance(exc, TimeoutError) or serial_hard_fault):
+                 try: self.dev.emergency_recover(f"{name}: {type(exc).__name__}: {exc}")
+                 except Exception: pass
++            if serial_hard_fault:
++                # A USB/UART disappearance during a motor test often means MCU
++                # reset/brownout or power-stage noise. Never continue into the
++                # next actuator command after such an event, even if the port
++                # re-enumerates successfully. Recovery exists only to send STOP.
++                self.motion_abort = True
++                self.motion_abort_reason = f"fatal serial/hardware reset at {name}: {type(exc).__name__}: {exc}"
++                self.log.log("ERROR", "MOTION ABORT LATCHED: " + self.motion_abort_reason)
+             r = TestResult(name, "FAIL", started, time.monotonic() - start, error=f"{type(exc).__name__}: {exc}")
+             self.log.add_result(r); return None
+ 
+@@ -1861,7 +1872,8 @@ class TestSuite:
+             for node in ("local", "right"):
+                 v = self.dev.values(node, f"idle_{k}")
+                 # Presence/finite test for fields that previously disappeared while disarmed.
+-                for key in ("motor_current_A", "id_A", "iq_A", "erpm", "vin_V"):
++                for key in ("motor_current_A", "input_current_A", "id_A", "iq_A", "vd", "vq",
++                            "erpm", "vin_V", "position_deg"):
+                     assert key in v and isinstance(v[key], (int, float)) and math.isfinite(float(v[key])), f"{node} missing/nonfinite {key}"
+                 samples[node].append(v)
+             time.sleep(self.args.sample_period)
+@@ -1889,6 +1901,9 @@ class TestSuite:
+                 "iq_range_A": [min(x["iq_A"] for x in arr), max(x["iq_A"] for x in arr)],
+                 "imotor_range_A": [min(x["motor_current_A"] for x in arr), max(x["motor_current_A"] for x in arr)],
+                 "input_current_range_A": [min(x["input_current_A"] for x in arr), max(x["input_current_A"] for x in arr)],
++                "vd_range_V": [min(float(x["vd"]) for x in arr), max(float(x["vd"]) for x in arr)],
++                "vq_range_V": [min(float(x["vq"]) for x in arr), max(float(x["vq"]) for x in arr)],
++                "rotor_position_range_deg": [min(float(x["position_deg"]) for x in arr), max(float(x["position_deg"]) for x in arr)],
+                 "erpm_range": [min(x["erpm"] for x in arr), max(x["erpm"] for x in arr)],
+                 "faults": sorted(set(x["fault"] for x in arr)),
+             } for node, arr in samples.items()
+@@ -2655,10 +2670,10 @@ class TestSuite:
+                     if position_guard_start_deg is None:
+                         position_guard_start_deg = pnow
+                         position_guard_start_t = now
+-                    elif now - position_guard_start_t >= 0.25:
++                    elif now - position_guard_start_t >= 0.15:
+                         moved = abs(pnow - position_guard_start_deg)
+                         iq_abs = abs(float(vt.get("iq_A") or 0.0))
+-                        if moved < 1.0 and iq_abs >= 0.8:
++                        if moved < 0.5 and iq_abs >= 0.6:
+                             expected_cmd, expected_raw = self._set_wire_expectation(kind, value)
+                             self.log.command_trace({
+                                 "timestamp": now_iso(), "scope": "position_stall_abort",
+@@ -2682,7 +2697,7 @@ class TestSuite:
+                                 self.dev.stop(node); time.sleep(0.02)
+                             raise AssertionError(
+                                 f"{node} POSITION_STALL_OR_PHASE_REFERENCE_FAILURE: Iq={iq_abs:.2f}A "
+-                                f"but position moved only {moved:.2f}deg in >=0.25s; released immediately")
++                                f"but position moved only {moved:.2f}deg in >=0.15s; released immediately")
+ 
+                 # V17 fail-fast speed-direction guard. COMM_SET_RPM is electrical
+                 # RPM. If a clearly moving motor reports the opposite sign from
+@@ -3070,7 +3085,7 @@ class TestSuite:
+         self.result("04a_no_false_drv_mapping", self.false_drv_mapping_test)
+         self.result("05_prepare_safe_uart_test_mode", self.prepare_safe_uart_test_mode, skip=not self.args.full,
+                     skip_reason="read-only run does not modify APPCONF")
+-        self.result("06_idle_telemetry_id_iq_imotor", self.idle_telemetry,
++        self.result("06_idle_telemetry_all_standard_fields", self.idle_telemetry,
+                     skip=not current_ok, skip_reason="prerequisite current-zero calibration failed")
+         self.result("06a_protocol_get_matrix", self.protocol_get_matrix)
+         self.result("06b_passive_spin_cross_side_isolation", self.passive_spin_current_observation,
+@@ -3082,7 +3097,7 @@ class TestSuite:
+         self.result("10_crc_parser_recovery", self.crc_recovery_hardware)
+ 
+         if self.args.full:
+-            # V19 default: one integrated board commissioning transaction. It is
++            # V24 default: one integrated board commissioning transaction. It is
+             # deliberately the board sensor path (current-cal + LEFT encoder +
+             # RIGHT Hall + LEFT electrical sync + EEPROM), not a claim of full
+             # upstream R/L/flux motor-model detection. The old individual detect
+@@ -3169,12 +3184,16 @@ class TestSuite:
+                 ("28_right_position_0_360", "right", right_ready, lambda: self.position_test("right")),
+             ]
+             for name, node, ready, fn in tests:
+-                self.result(name, fn, skip=not ready, skip_reason=f"{node} sensor/sync prerequisite failed")
+-                if ready:
++                can_run = ready and not self.motion_abort
++                reason = self.motion_abort_reason if self.motion_abort else f"{node} sensor/sync prerequisite failed"
++                self.result(name, fn, skip=not can_run, skip_reason=reason)
++                if ready and not self.motion_abort:
+                     self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
++                elif self.motion_abort:
++                    self.result(name + "_release", lambda: None, skip=True, skip_reason=self.motion_abort_reason)
+ 
+             for idx, node in enumerate(("local", "right"), start=29):
+-                ready = left_ready if node == "local" else right_ready
++                ready = (left_ready if node == "local" else right_ready) and not self.motion_abort
+                 self.result(
+                     f"{idx:02d}_{node}_fault_stop_3s",
+                     lambda n=node: self.monitor_fault_recovery(n),
+@@ -3207,12 +3226,12 @@ def parse_args() -> argparse.Namespace:
+     ap.add_argument("--full", action="store_true", help="run integrated commissioning and motor movement tests")
+     ap.add_argument("--yes", action="store_true", help="non-interactive confirmation for motion/homing writes")
+     ap.add_argument("--individual-detect", action="store_true",
+-                    help="use legacy separate LEFT encoder and RIGHT Hall detect instead of V22 integrated board commissioning")
++                    help="use legacy separate LEFT encoder and RIGHT Hall detect instead of V24 integrated board commissioning")
+     ap.add_argument("--homing-calibrate", action="store_true",
+                     help="opt-in LEFT full hard-stop calibration: right stop=0, left stop=360, save span, return 180")
+     ap.add_argument("--homing-on", action="store_true",
+                     help="enable and persist LEFT one-stop homing on future power-on (requires a previously calibrated span)")
+-    ap.add_argument("--detect-current", type=float, default=1.0, help="sensor detect current [A] for --individual-detect; V22 integrated board commissioning uses conservative fixed 1.00 A")
++    ap.add_argument("--detect-current", type=float, default=1.0, help="sensor detect current [A] for --individual-detect; V24 integrated board commissioning uses conservative fixed 1.00 A")
+     ap.add_argument("--current-cal-retries", type=int, default=2, help="retry transient block-mean current-zero failures")
+     ap.add_argument("--detect-timeout", type=float, default=65.0)
+     ap.add_argument("--duty", type=float, default=0.03, help="absolute duty used for +/- duty test")

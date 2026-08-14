@@ -1,0 +1,38 @@
+[1/19] strict syntax: FOC + sensor + ISR + runtime integration
+[2/19] sensor/FOC behavioral tests
+ALL_FOC_SENSOR_TESTS_PASS
+[3/19] VESC outer PID + MTPA + FW numeric/behavior tests
+MTPA_SWEEP cases=5952 max_id_error=0_internal | FW_MAP cases=290 max_error=0
+VESC_ADVANCED_CONTROL_TESTS_PASS
+[4/19] SVM numeric comparison against VESC foc_svm equations
+SVM_VESC_COMPARE tested=176866 max_compare_error=1 mean_abs_error=0.032113 sector_mismatch=7
+[5/19] Q14 trig LUT accuracy
+TRIG_Q14_ACCURACY max_error=2_lsb mean_abs_error=0.553955 worst_phase=5978
+[6/19] VESC packet framing + CRC + parser
+VESC_PACKET_TESTS_PASS
+[7/19] VESC 6.00 configuration wire footprint + safety policy
+VESC_CONFIG_WIRE_TESTS_PASS
+[8/19] VESC APP ADC fixed-point behavior
+VESC_APP_FIXEDPOINT_TESTS_PASS
+[9/19] VESC compatibility modules strict syntax
+[10/19] static resource/pin/ADC contract
+RESOURCE_PIN_ADC_CONTRACT_TESTS_PASS
+[11/19] robust current-zero policy incl. single-spike tolerance
+CURRENT_CAL_ROBUST_POLICY_PASS N=2048 BLOCK=64 raw_span_rlB=311 block_span_rlB=5 drift_block_span=124
+[12/19] UBSan deterministic stress incl. MTPA/FW
+FOC_UBSAN_FUZZ_PASS
+[13/19] Python tester inventory bootstrap (no HBTS circular dependency)
+TESTER_INVENTORY_BOOTSTRAP_PASS
+[14/19] VESC facade command/tester coverage contract
+TESTER_COMMAND_COVERAGE_PASS firmware_cases=27
+[15/19] V12 commissioning + standard-wire regression contract
+V12_COMMISSIONING_CONTRACT_PASS hall_sweep_ms=11520 encoder_sweep_ms=11520 align_ms=1200 timeout_ms=30000 vmax=2400
+[16/19] V13 hardware-log regression contract
+V13_BASELINE_REGRESSION_CONTRACT_PASS
+[17/19] V14 latest hardware-log regression contract
+V14_LATEST_HARDWARE_REGRESSION_CONTRACT_PASS
+[18/19] V14 post-detect ARM/SET contract
+V14_POST_DETECT_ARM_CONTRACT_PASS
+[19/19] V15 VESC SET/GET + V1 ISR contract
+V15_VESC_FLOW_V1_ISR_CONTRACT_PASS
+ALL_HOST_TESTS_PASS

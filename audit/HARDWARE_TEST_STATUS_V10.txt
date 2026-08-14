@@ -1,0 +1,33 @@
+HOVERBOARD V10 HARDWARE VERIFICATION STATUS
+==========================================
+Prepared after auditing user hardware log: vesc_full_test_20260812_203937.zip
+
+OFFLINE/STATIC VERIFICATION
+- Host regression: PASS 14/14
+- Python tester import/self-test: PASS
+- VESC facade command/test coverage: PASS, 27 firmware command cases referenced
+- Cortex-M3 FOC hot path division helpers: 0
+- Cortex-M3 encoder hot path division helpers: 0
+- Cortex-M3 DMA current ISR division helpers: 0
+- Resource/pin/ADC timing contract: PASS
+
+USER V9 HARDWARE LOG FACTS
+- Local ID 10 / virtual RIGHT ID 11 inventory: PASS
+- Current-zero calibration: PASS
+- APP ADC/config/CRC communication: PASS
+- ISR overrun count: 0 in the supplied run
+- LEFT Encoder Detect: FAIL by FAST CURRENT GUARD
+- RIGHT Hall Detect: FAIL by FAST CURRENT GUARD
+- Motion SET tests: not run because sensor commissioning did not pass
+
+V10 CHANGES REQUIRING HARDWARE PROOF
+- restored stock phase-current ADC timing (divider 4, 7.5-cycle phase sample, timer offset 80)
+- standard current strict bridge/side gating and 25-ms stale expiry
+- explicit virtual-CAN LEFT/RIGHT contexts
+- HBTS v9 route counters and first-fault snapshot
+- full GET + zero-SET routing matrix
+- target + peer sampling for all nonzero Duty/Current/RPM/Position/Brake/current-relative tests
+
+STATUS
+V10 is OFFLINE-AUDITED but NOT YET HARDWARE-PROVEN. Run RUN_BUILD_UPLOAD_TEST_LINUX.sh
+on the physical board and return the generated vesc_full_test_*.zip.

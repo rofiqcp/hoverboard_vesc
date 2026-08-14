@@ -1,0 +1,20 @@
+Validation performed in artifact environment
+============================================
+PASS - Python py_compile for installer/debug/tests
+PASS - protocol patcher unit: monolithic v22 service -> split services
+PASS - protocol patcher unit: previous ServiceBudget hotfix -> split services
+PASS - patcher idempotency: second apply does not duplicate task services
+PASS - synthetic apply protects src/motor.c and src/stm32f1xx_it.c byte-for-byte
+PASS - synthetic full task contract: 56 upstream VESC task semantics have explicit function + main call-site
+PASS - main.c C11 syntax check with minimal STM32/HAL/project interface stubs (-Wall -Wextra -Werror)
+PASS - shell syntax for APPLY_AND_TEST_LINUX.sh and PACK_COMPLETE_LOCAL_TREE.sh
+
+Not possible in this artifact environment
+-----------------------------------------
+NOT RUN - real PlatformIO STM32F103 link against the user's complete local checkout
+NOT RUN - ST-Link flashing
+NOT RUN - board timing / DWT ISR measurements
+NOT RUN - physical VESC Tool/UART hardware probe
+NOT RUN - actual Hall/ABI motor actuation or detect
+
+The provided v22/tools/v22_deep_debug.py performs PlatformIO compile+link and optional read-only serial boot-liveness checks on the user's machine.

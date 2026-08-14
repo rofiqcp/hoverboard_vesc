@@ -1,0 +1,25 @@
+V10 STOCK BOARD REFERENCE CONTRACT
+==================================
+Original hoverboard-firmware-hack-FOC comparison:
+- PWM_FREQ = 16000
+- A2BIT_CONV = 50 ADC count/A
+- phase current sample = ADC_SAMPLETIME_7CYCLES_5
+- ADC_CONV_CLOCK_CYCLES = 20 total ADC clocks for phase conversion
+- ADC_CLOCK_DIV = 4
+- ADC_TOTAL_CONV_TIME = 80 timer ticks
+- TIM8/LEFT timer is offset by ADC_TOTAL_CONV_TIME
+- LEFT Hall PB5/PB6/PB7
+- RIGHT Hall PC10/PC11/PC12
+- LEFT PWM TIM8
+- RIGHT PWM TIM1
+- LEFT DC current PC0; LEFT phase current PA0/PC3
+- RIGHT DC current PC1; RIGHT phase current PC4/PC5
+
+V10 fast regular dual-ADC ranks:
+rank1: ADC1 PC1 DCR + ADC2 PC0 DCL, 1.5-cycle sample
+rank2: ADC1 PA0 LEFT phase + ADC2 PC3 LEFT phase, 7.5-cycle sample
+rank3: ADC1 PC4 RIGHT phase + ADC2 PC5 RIGHT phase, 7.5-cycle sample
+DMA transfers 3 x 32-bit dual-ADC words into dcr,dcl,rlA,rlB,rrB,rrC.
+
+PA2/PA3 APP ADC and battery/temp are intentionally handled outside this regular
+three-rank current sequence by injected slow conversions.

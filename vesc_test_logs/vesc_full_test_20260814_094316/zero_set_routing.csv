@@ -1,0 +1,13 @@
+target,command,target_set_count,peer_set_count,target_bridge,peer_bridge,target_controller_id,peer_controller_id
+local,SET_DUTY_0,23,10,True,False,10,11
+local,SET_CURRENT_0,25,10,False,False,10,11
+local,SET_BRAKE_0,26,10,False,False,10,11
+local,SET_HANDBRAKE_0,27,10,False,False,10,11
+local,SET_RPM_0,28,10,False,False,10,11
+local,SET_CURRENT_REL_0,29,10,False,False,10,11
+right,SET_DUTY_0,13,31,True,False,11,10
+right,SET_CURRENT_0,15,31,False,False,11,10
+right,SET_BRAKE_0,16,31,False,False,11,10
+right,SET_HANDBRAKE_0,17,31,False,False,11,10
+right,SET_RPM_0,18,31,False,False,11,10
+right,SET_CURRENT_REL_0,19,31,False,False,11,10

@@ -1,0 +1,9 @@
+
+=== 14a_rotor_position_stream_modes 2026-08-14T09:43:31.189+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vesc/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vesc/tools/vesc_full_test.py", line 2268, in rotor_position_stream_test
+    out[f"{node}:{mode}:{label}"] = {"samples": 0, "observer_valid": False}
+UnboundLocalError: local variable 'out' referenced before assignment
+

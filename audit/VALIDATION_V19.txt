@@ -1,0 +1,43 @@
+V19 RELEASE VALIDATION
+======================
+
+Host regression: 27/27 PASS
+- strict FOC/sensor/ISR/runtime syntax
+- FOC/sensor behavior
+- VESC MTPA/FW
+- SVM compare
+- trig LUT
+- VESC packet/CRC/parser
+- MCCONF wire/config policy
+- APP ADC
+- compatibility syntax
+- resource/pin/ADC
+- current calibration robustness
+- UBSan stress
+- tester inventory/command coverage
+- V12..V18 hardware regression contracts
+- V19 encoder electrical-sync numeric invariant
+- V19 integrated position/sync/homing/EEPROM/protocol contract
+- V19 duty behavior numeric test (3% and +/-90%)
+
+Duty numeric host result:
+- requested 3%  -> duty_abs_q15=882 (~2.69%)
+- requested 90% -> duty_abs_q15=28841 (~88.0%)
+- requested -90% -> duty_abs_q15=28846 (~88.0%)
+
+Cortex-M3 hot paths:
+FAST_CURRENT_LOOP_DIV_HELPERS=0
+FAST_ENCODER_UPDATE_DIV_HELPERS=0
+FAST_DMA_CURRENT_ISR_DIV_HELPERS=0
+CORTEX_M3_CORE_OBJECT_PASS
+
+Python tester self-test:
+tester_release=V19
+HBTS_VERSION=14
+HBTS decode length=445 bytes
+packet 1/99/300-byte roundtrip PASS
+CRC-16 123456789 = 0x31C3 PASS
+
+PlatformIO/physical board:
+Not available in the release environment. The release therefore does NOT claim
+V19 hardware PASS until it is flashed and the user returns the V19 hardware log.

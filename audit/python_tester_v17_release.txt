@@ -1,0 +1,7 @@
+2026-08-12T21:09:39.686+00:00 [INFO ] Log bundle: /tmp/v17_release_selftest/vesc_full_test_20260812_210939
+2026-08-12T21:09:39.687+00:00 [INFO ] tester_release=V17 Python=3.13.5 OS=Linux-6.18.35-x86_64-with-glibc2.41 args={'port': None, 'baud': 115200, 'timeout': 1.5, 'full': False, 'yes': False, 'detect_current': 0.5, 'current_cal_retries': 2, 'detect_timeout': 35.0, 'duty': 0.03, 'current': 0.5, 'erpm': 900, 'pos_step_deg': 15.0, 'motion_duration': 0.9, 'position_duration': 1.8, 'idle_samples': 8, 'sample_period': 0.12, 'passive_spin_seconds': 3.0, 'log_dir': '/tmp/v17_release_selftest'}
+2026-08-12T21:09:39.688+00:00 [PASS ] 00_protocol_self_test: {'roundtrip_lengths': [1, 99, 300], 'crc_123456789': '0x31C3', 'hbts_decode_len': 414}
+2026-08-12T21:09:39.688+00:00 [SKIP ] 01_hardware_tests: --port not supplied
+2026-08-12T21:09:39.688+00:00 [INFO ] FINAL COUNTS {'PASS': 1, 'FAIL': 0, 'WARN': 0, 'SKIP': 1}
+2026-08-12T21:09:39.688+00:00 [INFO ] Kirim folder ini untuk troubleshooting: /tmp/v17_release_selftest/vesc_full_test_20260812_210939
+2026-08-12T21:09:39.689+00:00 [INFO ] LOG ZIP READY: /tmp/v17_release_selftest/vesc_full_test_20260812_210939.zip

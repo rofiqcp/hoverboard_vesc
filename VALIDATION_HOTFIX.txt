@@ -1,0 +1,21 @@
+V22 DIRECT HOTFIX VALIDATION
+===========================
+PASS Python syntax: 3 files
+PASS vesc_protocol.h declares both missing linker symbols
+PASS vesc_services.c consumes both symbols
+PASS patcher contains bounded VescProtocol_ServiceBudget implementation
+PASS patcher adds VescProtocol_RxBudgetYields implementation
+PASS patcher adds critical-reply backpressure
+PASS Python contract test explicitly rejects declaration-without-definition
+PASS debug serial probe sends no motor SET commands
+PASS Python debug runner executes every tests/test_*.py script individually
+
+LIMITATION OF THIS ZIP
+----------------------
+This execution environment can read the GitHub branch through the GitHub connector but cannot
+materialize/download the complete repository archive into the build container. Therefore this
+artifact is a DIRECT-LAYOUT HOTFIX (`v22/src`, `v22/tests`, `v22/tools`) for the user's existing
+complete checkout, not a fabricated claim of a byte-complete repository mirror.
+
+`APPLY_AND_TEST_LINUX.sh` runs the actual full Python/host/PlatformIO tests against the user's complete
+checkout, and `PACK_COMPLETE_LOCAL_TREE.sh` then creates the requested complete v22 ZIP locally.

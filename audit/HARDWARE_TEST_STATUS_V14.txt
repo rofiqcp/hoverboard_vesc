@@ -1,0 +1,11 @@
+V14 HARDWARE TEST STATUS
+========================
+
+Host regressions: 18/18 PASS
+Cortex-M3 hot-path codegen audit: PASS
+Python protocol/HBTS self-test: PASS
+
+PlatformIO CLI: NOT AVAILABLE in this environment
+Physical STM32 board/ST-Link: NOT AVAILABLE in this environment
+
+Therefore this release is source/host/codegen/protocol validated, but LEFT/RIGHT physical motor operation is NOT claimed until V14 is run on the target board.

@@ -1,0 +1,8 @@
+V12 RELEASE STATUS
+==================
+Host regression: PASS 15/15
+Cortex-M3 hot-path codegen: PASS
+Python/HBTS tester self-test: PASS (388-byte diagnostic payload)
+Source syntax/UBSan/numeric/packet/config tests: PASS
+Physical STM32F103RCT6 upload: NOT RUN in packaging environment (PlatformIO CLI/ST-Link unavailable)
+Physical motor movement / LEFT encoder detect / RIGHT Hall detect / four non-zero SETs: MUST be validated on user's board with wheels lifted and current-limited supply.

@@ -1,0 +1,11 @@
+V7 build/test environment
+Generated: 2026-08-12T12:18:37Z
+
+python: Python 3.13.5
+clang: clang version 17.0.0 (https://github.com/swiftlang/llvm-project.git 10999b6d034fe318f3d56c83bddb6572593a8bb0)
+pio: unavailable
+arm-none-eabi-gcc: unavailable
+
+Host regression: see audit/host_tests_v7_final.txt
+Cortex-M3 codegen audit: see audit/cortex_m3_codegen_v7_final.txt
+Python tester self-test: see audit/python_tester_selftest_v7_final.txt

@@ -1,0 +1,6 @@
+(10, [11]) -> (10, 11, 'COMM_GET_VALUES')
+(None, [11]) -> (10, 11, 'derived_from_single_virtual_CAN')
+(253, [254]) -> (253, 254, 'COMM_GET_VALUES')
+(254, [0]) -> (254, 0, 'COMM_GET_VALUES')
+ambiguous_zero_expected_error: RuntimeError local controller ID absent from GET_VALUES and virtual CAN ID 0 is ambiguous (local could be 254 or 255)
+PYTHON_INVENTORY_BOOTSTRAP_PASS
