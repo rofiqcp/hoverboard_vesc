@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-shot VESC-compatible V21 bench test for the dual hoverboard controller.
+"""One-shot VESC-compatible V22 bench test for the dual hoverboard controller.
 
 The script produces a timestamped diagnostic bundle that can be sent back for
 troubleshooting. It uses only the public VESC UART protocol plus a read-only
@@ -34,7 +34,7 @@ import traceback
 from typing import Any, Callable, Optional
 
 # VESC 6.00 command IDs used by this firmware.
-TESTER_RELEASE = "V21"
+TESTER_RELEASE = "V22"
 
 COMM_FW_VERSION = 0
 COMM_GET_VALUES = 4
@@ -2257,8 +2257,9 @@ class TestSuite:
         # in VESC Tool. One motor is selected at a time by firmware to keep replies
         # unambiguous on the single UART transport.
         # Modes 2/6/7 are genuine flux-observer views upstream. This port does
-        # not have a model observer yet, so V20 deliberately sends no fake packet
-        # instead of aliasing active sensor phase (the V19 bug).
+        # not have a model observer yet, so V22 deliberately sends no fake packet
+        # instead of aliasing active sensor phase.
+        out: dict[str, Any] = {}
         for node, mode, label in (("local", 2, "observer"), ("local", 6, "obs_vs_enc"),
                                   ("right", 2, "observer"), ("right", 7, "obs_vs_hall")):
             d = self.dev.diag(node, f"rotor_{label}_diag")
@@ -2267,7 +2268,6 @@ class TestSuite:
             assert len(vals) == 0, f"{node} mode {mode} must not stream fake observer data: {vals[:6]}"
             out[f"{node}:{mode}:{label}"] = {"samples": 0, "observer_valid": False}
 
-        out: dict[str, Any] = {}
         cases = [
             ("local", 3, "encoder_raw_mechanical"),
             ("local", 4, "pid_position"),
@@ -2948,8 +2948,8 @@ class TestSuite:
         v_brake = self.dev.values(node, "full_brake")
         assert d_brake.get("armed") and d_brake.get("bridge_moe"),             f"{node} Full Brake did not keep target bridge active: {d_brake}"
         assert int(d_brake.get("last_set_command") or -1) == COMM_SET_DUTY
-        assert int(d_brake.get("last_set_host_raw") or 1) == 0
-        assert int(d_brake.get("duty_target_q15") or 0) == 0
+        assert int(d_brake.get("last_set_host_raw", 1)) == 0
+        assert int(d_brake.get("duty_target_q15", 0)) == 0
         assert abs(float(v_brake.get("duty") or 0.0)) <= 0.002
         assert not d_peer.get("armed") and not d_peer.get("bridge_moe"),             f"{node} Full Brake leaked to peer {peer}: {d_peer}"
 
@@ -2957,7 +2957,7 @@ class TestSuite:
         d_stop = self.dev.diag(node, "full_brake_then_stop")
         assert not d_stop.get("armed") and not d_stop.get("bridge_moe"),             f"{node} Stop did not release bridge after Full Brake: {d_stop}"
         assert int(d_stop.get("last_set_command") or -1) == COMM_SET_CURRENT
-        assert int(d_stop.get("last_set_host_raw") or 1) == 0
+        assert int(d_stop.get("last_set_host_raw", 1)) == 0
         return {"full_brake": d_brake, "peer": d_peer, "stop": d_stop}
 
     def stop_and_verify(self, node: str) -> dict[str, Any]:
@@ -3166,12 +3166,12 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--full", action="store_true", help="run integrated commissioning and motor movement tests")
     ap.add_argument("--yes", action="store_true", help="non-interactive confirmation for motion/homing writes")
     ap.add_argument("--individual-detect", action="store_true",
-                    help="use legacy separate LEFT encoder and RIGHT Hall detect instead of V21 integrated board commissioning")
+                    help="use legacy separate LEFT encoder and RIGHT Hall detect instead of V22 integrated board commissioning")
     ap.add_argument("--homing-calibrate", action="store_true",
                     help="opt-in LEFT full hard-stop calibration: right stop=0, left stop=360, save span, return 180")
     ap.add_argument("--homing-on", action="store_true",
                     help="enable and persist LEFT one-stop homing on future power-on (requires a previously calibrated span)")
-    ap.add_argument("--detect-current", type=float, default=1.0, help="sensor detect current [A] for --individual-detect; V21 integrated board commissioning uses conservative fixed 1.00 A")
+    ap.add_argument("--detect-current", type=float, default=1.0, help="sensor detect current [A] for --individual-detect; V22 integrated board commissioning uses conservative fixed 1.00 A")
     ap.add_argument("--current-cal-retries", type=int, default=2, help="retry transient block-mean current-zero failures")
     ap.add_argument("--detect-timeout", type=float, default=65.0)
     ap.add_argument("--duty", type=float, default=0.03, help="absolute duty used for +/- duty test")

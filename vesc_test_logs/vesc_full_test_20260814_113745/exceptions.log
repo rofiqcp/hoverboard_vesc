@@ -1,0 +1,520 @@
+
+=== 08_config_read_roundtrip 2026-08-14T11:38:00.580+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2085, in config_read_and_roundtrip
+    ack = self.dev.transact(bytes((COMM_SET_APPCONF,)) + app[1:], node="local", timeout=4.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1234, in transact
+    return self.read_payload(timeout=timeout, node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1228, in read_payload
+    raise TimeoutError(f"VESC response timeout after {timeout or self.timeout:.1f}s")
+TimeoutError: VESC response timeout after 4.0s
+
+
+=== 21_left_position_0_360 2026-08-14T11:38:46.308+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3118, in <lambda>
+    ("21_left_position_0_360", "local", left_ready, lambda: self.position_test("local")),
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2916, in position_test
+    rows = self._stream_command(node, "pos", target, self.args.position_duration, "position")
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2606, in _stream_command
+    dt=self.dev.diag(node,label)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1334, in diag
+    payload = self.read_payload(timeout=remaining, node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1221, in read_payload
+    b = self.ser.read(1)
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 595, in read
+    raise SerialException(
+serial.serialutil.SerialException: device reports readiness to read but returned no data (device disconnected or multiple access on port?)
+
+
+=== 21_left_position_0_360_release 2026-08-14T11:38:46.309+07:00 ===
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3133, in <lambda>
+    self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2966, in stop_and_verify
+    self.dev.stop(node); time.sleep(0.08)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1401, in stop
+    self.set_current(node, 0.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1382, in set_current
+    self.send_only(bytes((COMM_SET_CURRENT,)) + pack_i32(round(amps * 1000)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1216, in send_only
+    self.ser.write(f); self.ser.flush()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error
+
+
+=== 22_right_duty_pos 2026-08-14T11:38:46.309+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3119, in <lambda>
+    ("22_right_duty_pos", "right", right_ready, lambda: self.motion_test("right", "duty", +self.args.duty, "duty_pos")),
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2785, in motion_test
+    pre = self.dev.diag(node, label + "_pre")
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1325, in diag
+    self.ser.reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+
+
+=== 22_right_duty_pos_release 2026-08-14T11:38:46.310+07:00 ===
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3133, in <lambda>
+    self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2966, in stop_and_verify
+    self.dev.stop(node); time.sleep(0.08)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1401, in stop
+    self.set_current(node, 0.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1382, in set_current
+    self.send_only(bytes((COMM_SET_CURRENT,)) + pack_i32(round(amps * 1000)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1216, in send_only
+    self.ser.write(f); self.ser.flush()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error
+
+
+=== 23_right_duty_neg 2026-08-14T11:38:46.311+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3120, in <lambda>
+    ("23_right_duty_neg", "right", right_ready, lambda: self.motion_test("right", "duty", -self.args.duty, "duty_neg")),
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2785, in motion_test
+    pre = self.dev.diag(node, label + "_pre")
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1325, in diag
+    self.ser.reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+
+
+=== 23_right_duty_neg_release 2026-08-14T11:38:46.311+07:00 ===
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3133, in <lambda>
+    self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2966, in stop_and_verify
+    self.dev.stop(node); time.sleep(0.08)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1401, in stop
+    self.set_current(node, 0.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1382, in set_current
+    self.send_only(bytes((COMM_SET_CURRENT,)) + pack_i32(round(amps * 1000)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1216, in send_only
+    self.ser.write(f); self.ser.flush()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error
+
+
+=== 24_right_current_pos 2026-08-14T11:38:46.312+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3121, in <lambda>
+    ("24_right_current_pos", "right", right_ready, lambda: self.motion_test("right", "current", +self.args.current, "current_pos")),
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2785, in motion_test
+    pre = self.dev.diag(node, label + "_pre")
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1325, in diag
+    self.ser.reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+
+
+=== 24_right_current_pos_release 2026-08-14T11:38:46.312+07:00 ===
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3133, in <lambda>
+    self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2966, in stop_and_verify
+    self.dev.stop(node); time.sleep(0.08)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1401, in stop
+    self.set_current(node, 0.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1382, in set_current
+    self.send_only(bytes((COMM_SET_CURRENT,)) + pack_i32(round(amps * 1000)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1216, in send_only
+    self.ser.write(f); self.ser.flush()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error
+
+
+=== 25_right_current_neg 2026-08-14T11:38:46.313+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3122, in <lambda>
+    ("25_right_current_neg", "right", right_ready, lambda: self.motion_test("right", "current", -self.args.current, "current_neg")),
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2785, in motion_test
+    pre = self.dev.diag(node, label + "_pre")
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1325, in diag
+    self.ser.reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+
+
+=== 25_right_current_neg_release 2026-08-14T11:38:46.313+07:00 ===
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3133, in <lambda>
+    self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2966, in stop_and_verify
+    self.dev.stop(node); time.sleep(0.08)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1401, in stop
+    self.set_current(node, 0.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1382, in set_current
+    self.send_only(bytes((COMM_SET_CURRENT,)) + pack_i32(round(amps * 1000)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1216, in send_only
+    self.ser.write(f); self.ser.flush()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error
+
+
+=== 26_right_rpm_pos 2026-08-14T11:38:46.314+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3123, in <lambda>
+    ("26_right_rpm_pos", "right", right_ready, lambda: self.motion_test("right", "rpm", +self.args.erpm, "rpm_pos")),
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2785, in motion_test
+    pre = self.dev.diag(node, label + "_pre")
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1325, in diag
+    self.ser.reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+
+
+=== 26_right_rpm_pos_release 2026-08-14T11:38:46.315+07:00 ===
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3133, in <lambda>
+    self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2966, in stop_and_verify
+    self.dev.stop(node); time.sleep(0.08)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1401, in stop
+    self.set_current(node, 0.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1382, in set_current
+    self.send_only(bytes((COMM_SET_CURRENT,)) + pack_i32(round(amps * 1000)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1216, in send_only
+    self.ser.write(f); self.ser.flush()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error
+
+
+=== 27_right_rpm_neg 2026-08-14T11:38:46.315+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3124, in <lambda>
+    ("27_right_rpm_neg", "right", right_ready, lambda: self.motion_test("right", "rpm", -self.args.erpm, "rpm_neg")),
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2785, in motion_test
+    pre = self.dev.diag(node, label + "_pre")
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1325, in diag
+    self.ser.reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+
+
+=== 27_right_rpm_neg_release 2026-08-14T11:38:46.316+07:00 ===
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3133, in <lambda>
+    self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2966, in stop_and_verify
+    self.dev.stop(node); time.sleep(0.08)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1401, in stop
+    self.set_current(node, 0.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1382, in set_current
+    self.send_only(bytes((COMM_SET_CURRENT,)) + pack_i32(round(amps * 1000)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1216, in send_only
+    self.ser.write(f); self.ser.flush()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error
+
+
+=== 27a_right_brake 2026-08-14T11:38:46.316+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3125, in <lambda>
+    ("27a_right_brake", "right", right_ready, lambda: self.motion_test("right", "brake", +min(self.args.current,0.35), "brake")),
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2785, in motion_test
+    pre = self.dev.diag(node, label + "_pre")
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1325, in diag
+    self.ser.reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+
+
+=== 27a_right_brake_release 2026-08-14T11:38:46.317+07:00 ===
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3133, in <lambda>
+    self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2966, in stop_and_verify
+    self.dev.stop(node); time.sleep(0.08)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1401, in stop
+    self.set_current(node, 0.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1382, in set_current
+    self.send_only(bytes((COMM_SET_CURRENT,)) + pack_i32(round(amps * 1000)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1216, in send_only
+    self.ser.write(f); self.ser.flush()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error
+
+
+=== 27aa_right_handbrake 2026-08-14T11:38:46.317+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3126, in <lambda>
+    ("27aa_right_handbrake", "right", right_ready, lambda: self.motion_test("right", "handbrake", +min(self.args.current,0.35), "handbrake")),
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2785, in motion_test
+    pre = self.dev.diag(node, label + "_pre")
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1325, in diag
+    self.ser.reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+
+
+=== 27aa_right_handbrake_release 2026-08-14T11:38:46.318+07:00 ===
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3133, in <lambda>
+    self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2966, in stop_and_verify
+    self.dev.stop(node); time.sleep(0.08)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1401, in stop
+    self.set_current(node, 0.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1382, in set_current
+    self.send_only(bytes((COMM_SET_CURRENT,)) + pack_i32(round(amps * 1000)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1216, in send_only
+    self.ser.write(f); self.ser.flush()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error
+
+
+=== 27b_right_current_rel 2026-08-14T11:38:46.318+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3127, in <lambda>
+    ("27b_right_current_rel", "right", right_ready, lambda: self.motion_test("right", "current_rel", +0.02, "current_rel")),
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2785, in motion_test
+    pre = self.dev.diag(node, label + "_pre")
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1325, in diag
+    self.ser.reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+
+
+=== 27b_right_current_rel_release 2026-08-14T11:38:46.319+07:00 ===
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3133, in <lambda>
+    self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2966, in stop_and_verify
+    self.dev.stop(node); time.sleep(0.08)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1401, in stop
+    self.set_current(node, 0.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1382, in set_current
+    self.send_only(bytes((COMM_SET_CURRENT,)) + pack_i32(round(amps * 1000)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1216, in send_only
+    self.ser.write(f); self.ser.flush()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error
+
+
+=== 28_right_position_0_360 2026-08-14T11:38:46.319+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3128, in <lambda>
+    ("28_right_position_0_360", "right", right_ready, lambda: self.position_test("right")),
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2905, in position_test
+    start = self.dev.values(node, "pos_pre")
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1240, in values
+    payload = self.transact(bytes((COMM_GET_VALUES,)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1232, in transact
+    self.ser.reset_input_buffer(); self.parser.reset()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+
+
+=== 28_right_position_0_360_release 2026-08-14T11:38:46.320+07:00 ===
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3133, in <lambda>
+    self.result(name + "_release", lambda n=node: self.stop_and_verify(n))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 2966, in stop_and_verify
+    self.dev.stop(node); time.sleep(0.08)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1401, in stop
+    self.set_current(node, 0.0)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1382, in set_current
+    self.send_only(bytes((COMM_SET_CURRENT,)) + pack_i32(round(amps * 1000)), node=node)
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1216, in send_only
+    self.ser.write(f); self.ser.flush()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error
+
+
+=== 90_final_left_diag 2026-08-14T11:38:46.321+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3145, in <lambda>
+    self.result("90_final_left_diag", lambda: self.dev.diag("local", "final"))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1325, in diag
+    self.ser.reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+
+
+=== 91_final_right_diag 2026-08-14T11:38:46.321+07:00 ===
+Traceback (most recent call last):
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1418, in result
+    value = fn()
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 3146, in <lambda>
+    self.result("91_final_right_diag", lambda: self.dev.diag("right", "final"))
+  File "/media/sirobo/Data/BLDC/hoverboard_vescv22/tools/vesc_full_test.py", line 1325, in diag
+    self.ser.reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 683, in reset_input_buffer
+    self._reset_input_buffer()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 677, in _reset_input_buffer
+    termios.tcflush(self.fd, termios.TCIFLUSH)
+termios.error: (5, 'Input/output error')
+

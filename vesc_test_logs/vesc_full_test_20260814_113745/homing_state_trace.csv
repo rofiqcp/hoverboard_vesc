@@ -1,0 +1,1 @@
+timestamp,node,homing_state,homing_state_name,active,encoder_electrical_ready,steering_calibrated,steering_homed,logical_position_deg,steering_zero_ticks,steering_span_ticks,iq_A,erpm,internal_error,vesc_fault
